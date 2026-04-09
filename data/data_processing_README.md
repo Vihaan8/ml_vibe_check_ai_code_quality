@@ -47,6 +47,40 @@ Models we can't match are dropped. This mainly affects base models (non-instruct
 
 The `complete` and `instruct` splits are kept as separate rows because the same model produces different code under each prompt format, and pass rates differ (45% for complete, 37% for instruct). Task metadata (prompts, libs, entry point) is merged directly into the CSV so everything is in one place.
 
+## Pipeline Diagram
+
+```mermaid
+flowchart TD
+    subgraph Sources
+        A["bigcode/bigcodebench\n(HuggingFace)"]
+        B["bigcodebench releases v0.2.5\n(GitHub)"]
+        C["bigcodebench-complete-perf\nbigcodebench-instruct-perf\n(HuggingFace)"]
+    end
+
+    A -->|"1,140 tasks"| D["bigcodebench_tasks.jsonl\nprompts, tests, entry points, libs"]
+    B -->|"158 MB zip"| E["sanitized_calibrated_samples/"]
+    C -->|"137 JSON files"| F["eval_results/\nper-model pass/fail labels"]
+
+    E --> G["complete/\n87 model files"]
+    E --> H["instruct/\n134 model files"]
+    E -.->|"excluded: no labels"| I["full/"]
+    E -.->|"excluded: 148 tasks only"| J["hard/"]
+
+    G --> K["Name Normalization\nfuzzy matching + manual map"]
+    H --> K
+    F --> K
+
+    K --> L["Match Samples to Labels\n57 models matched\nrest dropped"]
+
+    D --> M["Merge Task Metadata\njoin prompts, libs, entry_point"]
+    L --> M
+
+    M --> N["samples.csv\n123,416 rows x 9 columns\n57 models | 1,140 tasks | 41% pass rate"]
+
+    style I fill:#f5f5f5,stroke:#ccc,color:#999
+    style J fill:#f5f5f5,stroke:#ccc,color:#999
+```
+
 ## Raw data layout
 
 ```
