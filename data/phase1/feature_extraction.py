@@ -21,17 +21,20 @@ Usage
 
 import ast
 import re
-import math
-import keyword
 import textwrap
 from typing import Optional
+
 import pandas as pd
 import numpy as np
 
+from radon.raw import analyze
+from radon.complexity import cc_visit
+from radon.metrics import h_visit, mi_visit
 
 # ---------------------------------------------------------------------------
 # 1. Classical software metrics
 # ---------------------------------------------------------------------------
+
 
 def _safe_parse(code: str) -> Optional[ast.Module]:
     """Try to parse code; return None if syntax error or non-string input."""
@@ -43,46 +46,108 @@ def _safe_parse(code: str) -> Optional[ast.Module]:
         return None
 
 
-def _count_lines(code: str) -> dict:
-    lines = code.splitlines()
-    total = len(lines)
-    blank = sum(1 for l in lines if l.strip() == "")
-    comment = sum(1 for l in lines if l.strip().startswith("#"))
-    code_lines = total - blank - comment
-    return {
-        "loc_total": total,
-        "loc_blank": blank,
-        "loc_comment": comment,
-        "loc_code": max(code_lines, 0),
-    }
+def _radon_raw_metrics(code: str) -> dict:
+    """Raw code metrics from radon.raw.analyze()."""
+    try:
+        raw = analyze(code)
+        return {
+            "loc_total": raw.loc,
+            "loc_blank": raw.blank,
+            "loc_comment": getattr(raw, "single_comments", raw.comments),
+            "loc_code": raw.sloc,
+            "loc_logical": raw.lloc,
+            "loc_multi": raw.multi,
+        }
+    except Exception:
+        return {
+            "loc_total": 0,
+            "loc_blank": 0,
+            "loc_comment": 0,
+            "loc_code": 0,
+            "loc_logical": 0,
+            "loc_multi": 0,
+        }
 
 
-def _cyclomatic_complexity(tree: Optional[ast.Module]) -> int:
-    """
-    Counts branch-adding nodes (if/elif/for/while/except/with/assert/and/or/comprehensions).
-    CC = 1 + number of decision points  (McCabe's formula).
-    Returns 0 if tree is None (unparseable).
-    """
-    if tree is None:
-        return 0
-    branch_types = (
-        ast.If, ast.For, ast.While, ast.ExceptHandler,
-        ast.With, ast.Assert, ast.comprehension,
-    )
-    count = 1  # base
-    for node in ast.walk(tree):
-        if isinstance(node, branch_types):
-            count += 1
-        # BoolOp covers `and` / `or`
-        elif isinstance(node, ast.BoolOp):
-            count += len(node.values) - 1
-    return count
+def _radon_cc_metrics(code: str) -> dict:
+    """Cyclomatic complexity from radon.complexity.cc_visit()."""
+    try:
+        blocks = cc_visit(code)
+        complexities = [b.complexity for b in blocks]
+
+        if complexities:
+            cc_max = max(complexities)
+            cc_mean = sum(complexities) / len(complexities)
+            cc_blocks = len(complexities)
+        else:
+            cc_max = 1 if code.strip() else 0
+            cc_mean = float(cc_max)
+            cc_blocks = 0
+
+        return {
+            "classical_cyclomatic_complexity": cc_max,
+            "classical_cyclomatic_complexity_mean": round(cc_mean, 4),
+            "classical_cc_block_count": cc_blocks,
+        }
+    except Exception:
+        return {
+            "classical_cyclomatic_complexity": 0,
+            "classical_cyclomatic_complexity_mean": 0.0,
+            "classical_cc_block_count": 0,
+        }
+
+
+def _halstead_metrics(code: str) -> dict:
+    """Halstead metrics from radon.metrics.h_visit()."""
+    try:
+        h = h_visit(code).total
+        return {
+            "halstead_unique_operators": h.h1,
+            "halstead_unique_operands": h.h2,
+            "halstead_total_operators": h.N1,
+            "halstead_total_operands": h.N2,
+            "halstead_vocabulary": h.h,
+            "halstead_length": h.N,
+            "halstead_volume": round(h.volume, 2),
+            "halstead_difficulty": round(h.difficulty, 2),
+            "halstead_effort": round(h.effort, 2),
+            "halstead_time": round(h.time, 2),
+            "halstead_bugs": round(h.bugs, 4),
+        }
+    except Exception:
+        return {
+            "halstead_unique_operators": 0,
+            "halstead_unique_operands": 0,
+            "halstead_total_operators": 0,
+            "halstead_total_operands": 0,
+            "halstead_vocabulary": 0,
+            "halstead_length": 0,
+            "halstead_volume": 0.0,
+            "halstead_difficulty": 0.0,
+            "halstead_effort": 0.0,
+            "halstead_time": 0.0,
+            "halstead_bugs": 0.0,
+        }
+
+
+def _maintainability_index(code: str) -> dict:
+    """Optional: MI from radon.metrics.mi_visit()."""
+    try:
+        mi = mi_visit(code, multi=True)
+        return {
+            "classical_maintainability_index": round(mi, 2),
+        }
+    except Exception:
+        return {
+            "classical_maintainability_index": 0.0,
+        }
 
 
 def _max_nesting_depth(tree: Optional[ast.Module]) -> int:
     """Maximum control-flow nesting depth."""
     if tree is None:
         return 0
+
     nesting_types = (ast.If, ast.For, ast.While, ast.With, ast.Try, ast.ExceptHandler)
 
     def _depth(node, current=0):
@@ -95,88 +160,45 @@ def _max_nesting_depth(tree: Optional[ast.Module]) -> int:
     return _depth(tree)
 
 
-def _halstead_proxies(code: str) -> dict:
-    """
-    Lightweight Halstead proxies using tokenization.
-    We count unique operators and operands without a full Halstead implementation.
-    """
-    import tokenize, io
-    operators, operands = set(), set()
-    op_count, operand_count = 0, 0
-    op_tokens = {
-        tokenize.OP, tokenize.ERRORTOKEN,
-    }
-    try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(code).readline))
-        for tok in tokens:
-            if tok.type == tokenize.OP:
-                operators.add(tok.string)
-                op_count += 1
-            elif tok.type == tokenize.NAME and tok.string not in keyword.kwlist:
-                operands.add(tok.string)
-                operand_count += 1
-            elif tok.type == tokenize.NUMBER or tok.type == tokenize.STRING:
-                operands.add(tok.string)
-                operand_count += 1
-    except tokenize.TokenError:
-        pass
-
-    n1, n2 = len(operators), len(operands)
-    N1, N2 = op_count, operand_count
-    vocabulary = n1 + n2
-    length = N1 + N2
-    volume = length * math.log2(vocabulary) if vocabulary > 0 else 0
-    difficulty = (n1 / 2) * (N2 / n2) if n2 > 0 else 0
-    return {
-        "halstead_unique_operators": n1,
-        "halstead_unique_operands": n2,
-        "halstead_total_operators": N1,
-        "halstead_total_operands": N2,
-        "halstead_vocabulary": vocabulary,
-        "halstead_volume": round(volume, 2),
-        "halstead_difficulty": round(difficulty, 2),
-    }
-
-
 # ---------------------------------------------------------------------------
 # 2. AST structural features
 # ---------------------------------------------------------------------------
 
 _AST_NODE_TYPES = {
     # control flow
-    "ast_if_count":          ast.If,
-    "ast_for_count":         ast.For,
-    "ast_while_count":       ast.While,
-    "ast_try_count":         ast.Try,
-    "ast_except_count":      ast.ExceptHandler,
-    "ast_with_count":        ast.With,
+    "ast_if_count": ast.If,
+    "ast_for_count": ast.For,
+    "ast_while_count": ast.While,
+    "ast_try_count": ast.Try,
+    "ast_except_count": ast.ExceptHandler,
+    "ast_with_count": ast.With,
     # functions / classes
-    "ast_funcdef_count":     ast.FunctionDef,
-    "ast_asyncfuncdef_count":ast.AsyncFunctionDef,
-    "ast_classdef_count":    ast.ClassDef,
+    "ast_funcdef_count": ast.FunctionDef,
+    "ast_asyncfuncdef_count": ast.AsyncFunctionDef,
+    "ast_classdef_count": ast.ClassDef,
     # returns / yields
-    "ast_return_count":      ast.Return,
-    "ast_yield_count":       ast.Yield,
+    "ast_return_count": ast.Return,
+    "ast_yield_count": ast.Yield,
     # comprehensions
-    "ast_listcomp_count":    ast.ListComp,
-    "ast_dictcomp_count":    ast.DictComp,
-    "ast_setcomp_count":     ast.SetComp,
-    "ast_genexpr_count":     ast.GeneratorExp,
+    "ast_listcomp_count": ast.ListComp,
+    "ast_dictcomp_count": ast.DictComp,
+    "ast_setcomp_count": ast.SetComp,
+    "ast_genexpr_count": ast.GeneratorExp,
     # imports
-    "ast_import_count":      ast.Import,
-    "ast_importfrom_count":  ast.ImportFrom,
+    "ast_import_count": ast.Import,
+    "ast_importfrom_count": ast.ImportFrom,
     # assignments / augmented
-    "ast_assign_count":      ast.Assign,
-    "ast_augassign_count":   ast.AugAssign,
+    "ast_assign_count": ast.Assign,
+    "ast_augassign_count": ast.AugAssign,
     # assertions / raises / deletes
-    "ast_assert_count":      ast.Assert,
-    "ast_raise_count":       ast.Raise,
-    "ast_delete_count":      ast.Delete,
+    "ast_assert_count": ast.Assert,
+    "ast_raise_count": ast.Raise,
+    "ast_delete_count": ast.Delete,
     # lambdas
-    "ast_lambda_count":      ast.Lambda,
+    "ast_lambda_count": ast.Lambda,
     # pass / ellipsis (stub indicators)
-    "ast_pass_count":        ast.Pass,
-    "ast_ellipsis_count":    ast.Constant,   # filtered below
+    "ast_pass_count": ast.Pass,
+    "ast_ellipsis_count": ast.Constant,  # filtered below
 }
 
 
@@ -276,7 +298,9 @@ def _prompt_library_mentions(prompt: str) -> set:
     return mentioned
 
 
-def _prompt_alignment_features(code: str, prompt: str, tree: Optional[ast.Module]) -> dict:
+def _prompt_alignment_features(
+    code: str, prompt: str, tree: Optional[ast.Module]
+) -> dict:
     imported = _extract_imported_libraries(tree)
     prompt_libs = _prompt_library_mentions(prompt)
 
@@ -315,7 +339,8 @@ def _prompt_alignment_features(code: str, prompt: str, tree: Optional[ast.Module
     prompt_words_set = set(re.findall(r"\b[a-zA-Z_]\w*\b", prompt.lower()))
     identifier_overlap = (
         len(code_identifiers & prompt_words_set) / len(prompt_words_set)
-        if prompt_words_set else 0
+        if prompt_words_set
+        else 0
     )
 
     return {
@@ -342,13 +367,27 @@ _PLACEHOLDER_PATTERNS = [
     r"#\s*FIXME",
     r"#\s*PLACEHOLDER",
     r"raise\s+NotImplementedError",
-    r"return\s+None\s*$",          # bare return None with nothing else
+    r"return\s+None\s*$",  # bare return None with nothing else
     r"your\s+code\s+here",
     r"implement\s+this",
 ]
 
 # Generic / meaningless variable names
-_GENERIC_NAMES = {"result", "output", "data", "res", "ret", "temp", "tmp", "val", "x", "y", "z", "foo", "bar"}
+_GENERIC_NAMES = {
+    "result",
+    "output",
+    "data",
+    "res",
+    "ret",
+    "temp",
+    "tmp",
+    "val",
+    "x",
+    "y",
+    "z",
+    "foo",
+    "bar",
+}
 
 
 def _llm_smell_features(code: str, tree: Optional[ast.Module]) -> dict:
@@ -382,7 +421,8 @@ def _llm_smell_features(code: str, tree: Optional[ast.Module]) -> dict:
         ]
         generic_ratio = (
             sum(1 for n in assigned_names if n in _GENERIC_NAMES) / len(assigned_names)
-            if assigned_names else 0
+            if assigned_names
+            else 0
         )
         n_assigned = len(assigned_names)
     else:
@@ -395,8 +435,12 @@ def _llm_smell_features(code: str, tree: Optional[ast.Module]) -> dict:
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 non_docstring_body = [
-                    n for n in node.body
-                    if not (isinstance(n, ast.Expr) and isinstance(getattr(n, "value", None), ast.Constant))
+                    n
+                    for n in node.body
+                    if not (
+                        isinstance(n, ast.Expr)
+                        and isinstance(getattr(n, "value", None), ast.Constant)
+                    )
                 ]
                 if non_docstring_body and isinstance(non_docstring_body[0], ast.Return):
                     immediate_return += 1
@@ -414,18 +458,14 @@ def _llm_smell_features(code: str, tree: Optional[ast.Module]) -> dict:
                     magic_numbers += 1
 
     # ---- String literal used as entire return (e.g., return "not implemented") ----
-    string_return_count = len(
-        re.findall(r"return\s+['\"]", code, re.IGNORECASE)
-    )
+    string_return_count = len(re.findall(r"return\s+['\"]", code, re.IGNORECASE))
 
     # ---- Suspicious shortness ----
     # (absolute; relative-to-task handled at dataset level in Phase 2)
     is_very_short = int(len([l for l in lines if l.strip()]) <= 5)
 
     # ---- No imports at all ----
-    has_any_import = int(
-        bool(re.search(r"^\s*(import|from)\s+", code, re.MULTILINE))
-    )
+    has_any_import = int(bool(re.search(r"^\s*(import|from)\s+", code, re.MULTILINE)))
 
     # ---- Duplicate lines ratio ----
     non_blank_lines = [l.strip() for l in lines if l.strip()]
@@ -459,17 +499,6 @@ PARSE_ERROR_SENTINEL = -1  # used for classical metrics when code is unparseable
 def extract_features(code: str, prompt: str = "") -> dict:
     """
     Extract all Phase 1 features for a single (code, prompt) pair.
-
-    Parameters
-    ----------
-    code   : generated source code string
-    prompt : task description / docstring (can be empty string)
-
-    Returns
-    -------
-    dict with ~60 features across all four categories, plus:
-      - meta_parse_error (1 if code has a syntax error, else 0)
-      - meta_code_len_chars
     """
     tree = _safe_parse(code)
     parse_error = int(tree is None)
@@ -481,13 +510,14 @@ def extract_features(code: str, prompt: str = "") -> dict:
     feats["meta_code_len_chars"] = len(code)
 
     # -- 1. Classical --
-    feats.update(_count_lines(code))
-    feats["classical_cyclomatic_complexity"] = _cyclomatic_complexity(tree)
+    feats.update(_radon_raw_metrics(code))
+    feats.update(_radon_cc_metrics(code))
     feats["classical_max_nesting_depth"] = _max_nesting_depth(tree)
     feats["classical_func_arg_count"] = _function_arg_count(tree)
     feats["classical_unique_var_count"] = _unique_variable_names(tree)
     feats["classical_has_error_handling"] = _has_error_handling(tree)
-    feats.update(_halstead_proxies(code))
+    feats.update(_halstead_metrics(code))
+    feats.update(_maintainability_index(code))
 
     # -- 2. AST structural --
     feats.update(_ast_node_counts(tree))

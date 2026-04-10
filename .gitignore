@@ -5,3 +5,7 @@ __pycache__/
 .ipynb_checkpoints/
 *.pyc
 .DS_Store
+data/phase1/samples.csv
+data/phase1/features_bigcodebench.csv
+data/phase1/features_bigcodebench_radon_test.csv
+data/phase1/features_bigcodebench_radon.csv
