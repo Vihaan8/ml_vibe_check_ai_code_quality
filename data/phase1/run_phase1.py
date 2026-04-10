@@ -124,8 +124,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input",     default=None,
                         help="Path to BigCodeBench CSV file")
-    parser.add_argument("--out",       default="features_bigcodebench.csv",
-                        help="Output CSV path (default: features_bigcodebench.csv)")
+    parser.add_argument("--out",       default="features_sample.csv",
+                        help="Output CSV path (default: features_sample.csv)")
     parser.add_argument("--max-rows",  type=int, default=None,
                         help="Cap rows for quick testing, e.g. --max-rows 5000")
     parser.add_argument("--skip-download", action="store_true",
