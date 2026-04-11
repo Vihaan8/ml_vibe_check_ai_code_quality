@@ -52,13 +52,12 @@ These target common LLM code-generation failure modes.
 
 Extracted features:
 - `smell_hardcoded_return_funcs`
-- `smell_placeholder_hits`
 - `smell_is_very_short`
 
 ### Meta feature
-- `meta_parse_error`
+- `meta_parse_error` : check if code is parsed. 
 
-In total, this version outputs **17 features + 1 meta field** per sample.
+In total, this version outputs **16 features + 1 meta field** per sample.
 
 ---
 

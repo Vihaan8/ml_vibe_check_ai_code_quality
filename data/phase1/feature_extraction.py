@@ -43,7 +43,7 @@ def _classical_features(code: str, tree: Optional[ast.Module]) -> dict:
     CC         : cyclomatic complexity summed across all functions (via radon cc_visit)
     Nesting    : maximum control-flow nesting depth (via ast)
     """
-    # --- LOC via radon ---
+    # LOC by randon
     loc = 0
     if code.strip():
         try:
@@ -51,7 +51,7 @@ def _classical_features(code: str, tree: Optional[ast.Module]) -> dict:
         except SyntaxError:
             loc = len([l for l in code.splitlines() if l.strip()])
 
-    # --- Cyclomatic complexity via radon ---
+    # Cyclomatic complexity by radon
     cc = 0
     if code.strip():
         try:
@@ -60,7 +60,7 @@ def _classical_features(code: str, tree: Optional[ast.Module]) -> dict:
         except Exception:
             cc = 0
 
-    # --- Max nesting depth via ast ---
+    # Max nesting depth by ast
     nesting = 0
     if tree is not None:
         nesting_types = (ast.If, ast.For, ast.While, ast.With, ast.Try, ast.ExceptHandler)
@@ -187,16 +187,6 @@ def _alignment_features(code: str, prompt: str, tree: Optional[ast.Module]) -> d
 
 # 4. LLM smell features
 
-_PLACEHOLDER_PATTERNS = [
-    r"\bpass\b",
-    r"\.\.\.",
-    r"#\s*TODO",
-    r"#\s*FIXME",
-    r"raise\s+NotImplementedError",
-    r"your\s+code\s+here",
-]
-
-
 def _smell_features(code: str, tree: Optional[ast.Module]) -> dict:
     """
     hardcoded_return  : functions whose entire body is return <literal>
@@ -214,19 +204,12 @@ def _smell_features(code: str, tree: Optional[ast.Module]) -> dict:
                         and isinstance(real[0].value, ast.Constant)):
                     hardcoded_returns += 1
 
-    # Placeholder patterns
-    placeholder_hits = sum(
-        len(re.findall(pat, code, re.IGNORECASE | re.MULTILINE))
-        for pat in _PLACEHOLDER_PATTERNS
-    )
-
     # Suspiciously short
     non_blank = [l for l in code.splitlines() if l.strip()]
     is_very_short = int(len(non_blank) <= 5)
 
     return {
         "smell_hardcoded_return_funcs": hardcoded_returns,
-        "smell_placeholder_hits":       placeholder_hits,
         "smell_is_very_short":          is_very_short,
     }
 
@@ -244,7 +227,7 @@ def extract_features(code: str, prompt: str = "") -> dict:
 
     Returns
     -------
-    dict of 17 features + 1 meta field (parse error flag)
+    dict of 16 features + 1 meta field (parse error flag)
     """
     code   = _ensure_str(code)
     prompt = _ensure_str(prompt)
