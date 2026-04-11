@@ -55,7 +55,7 @@ Extracted features:
 - `smell_is_very_short`
 
 ### Meta feature
-- `meta_parse_error` : check if code is parsed. 
+- `meta_parse_error` : 1 if the code has a syntax error and cannot be parsed, else 0.
 
 In total, this version outputs **16 features + 1 meta field** per sample.
 
