@@ -2,12 +2,11 @@
 feature_extraction.py
 Phase 1: Feature extraction for Vibe Check
 
-Features match exactly what the proposal describes:
-
-  1. Classical software metrics   (LOC, cyclomatic complexity, nesting depth)
-  2. AST structural features      (control flow, error handling, import node counts)
-  3. Prompt-code alignment        (library coverage, missing libs, length ratio)
-  4. LLM smell features           (hardcoded returns, placeholders, suspiciously short)
+Four main features: 
+    1. Classical software metrics   (LOC, cyclomatic complexity, nesting depth)
+    2 . AST structural features      (control flow, error handling, import node counts)
+    3. Prompt-code alignment        (library coverage, missing libs, length ratio)
+    4. LLM smell features           (hardcoded returns, placeholders, suspiciously short)
 """
 
 import ast
@@ -19,9 +18,6 @@ from radon.complexity import cc_visit
 from radon.raw import analyze
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _safe_parse(code: str) -> Optional[ast.Module]:
     """Parse code into an AST. Returns None on syntax error or non-string input."""
@@ -38,9 +34,8 @@ def _ensure_str(value) -> str:
     return value if isinstance(value, str) else ""
 
 
-# ---------------------------------------------------------------------------
 # 1. Classical software metrics
-# ---------------------------------------------------------------------------
+
 
 def _classical_features(code: str, tree: Optional[ast.Module]) -> dict:
     """
@@ -85,9 +80,9 @@ def _classical_features(code: str, tree: Optional[ast.Module]) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
+
 # 2. AST structural features
-# ---------------------------------------------------------------------------
+
 
 def _ast_features(tree: Optional[ast.Module]) -> dict:
     """
@@ -122,9 +117,9 @@ def _ast_features(tree: Optional[ast.Module]) -> dict:
     return counts
 
 
-# ---------------------------------------------------------------------------
+
 # 3. Prompt-code alignment features
-# ---------------------------------------------------------------------------
+
 
 # The choice of the libs are using the ones are commonly used in Python coding tasks and 
 # are likely to be mentioned in prompts. 
@@ -190,9 +185,7 @@ def _alignment_features(code: str, prompt: str, tree: Optional[ast.Module]) -> d
     }
 
 
-# ---------------------------------------------------------------------------
 # 4. LLM smell features
-# ---------------------------------------------------------------------------
 
 _PLACEHOLDER_PATTERNS = [
     r"\bpass\b",
@@ -238,9 +231,7 @@ def _smell_features(code: str, tree: Optional[ast.Module]) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Top-level API
-# ---------------------------------------------------------------------------
+# Main extraction functions
 
 def extract_features(code: str, prompt: str = "") -> dict:
     """
