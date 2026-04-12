@@ -12,11 +12,14 @@ The goal of Phase 1 is to convert each `(prompt, generated code)` sample into a 
 - `run_phase1.py`  
   Loads the BigCodeBench CSV, runs feature extraction on all rows, saves the output CSV, and prints a quick feature summary.
 
+- `split_data.py`  
+  Splits the original dataset into **train / validation / test** sets before feature extraction.
+
 ---
 
 ## Feature groups
 
-This implementation extracts four feature groups, matching the proposal:
+This implementation extracts four feature groups, matching the proposal.
 
 ### 1. Classical software metrics
 These are traditional static metrics used in software defect prediction.
@@ -59,6 +62,8 @@ Extracted features:
 
 In total, this version outputs **16 features + 1 meta field** per sample.
 
+> Note: if your current `feature_extraction.py` still includes `smell_placeholder_hits`, then update this count accordingly.
+
 ---
 
 ## Input format
@@ -89,3 +94,94 @@ Install the required packages before running:
 
 ```bash
 pip install pandas numpy radon
+```
+
+## Recommended workflow
+
+Step 1: put samples.csv in this folder
+
+Place the original dataset file here:
+
+data/phase1/samples.csv
+
+Step 2: split the dataset into train / validation / test
+
+Run the split script first:
+
+python split_data.py --input samples.csv --outdir splits
+
+This will create:
+
+splits/train.csv
+splits/val.csv
+splits/test.csv
+
+The split is done before feature extraction, so that feature engineering can be run separately on each subset.
+
+Step 3: run feature extraction on each split
+
+Run Phase 1 separately for train / validation / test:
+
+python run_phase1.py --input splits/train.csv --out splits/train_features.csv
+python run_phase1.py --input splits/val.csv --out splits/val_features.csv
+python run_phase1.py --input splits/test.csv --out splits/test_features.csv
+
+This will create:
+
+splits/train_features.csv
+splits/val_features.csv
+splits/test_features.csv
+Quick test
+
+If you want to test the pipeline on a smaller subset first:
+
+python run_phase1.py --input samples.csv --max-rows 5000 --out features_sample.csv
+Offline demo
+
+If you do not want to use the real CSV, you can run the built-in synthetic demo:
+
+python run_phase1.py --skip-download
+Output
+
+Each output CSV contains:
+
+metadata columns:
+task_id
+model_name
+split
+label
+entry_point
+libs
+all extracted Phase 1 features
+
+After extraction, the script also prints:
+
+dataset shape
+parse error rate
+pass rate
+feature group counts
+top features by absolute correlation with label
+Programmatic usage
+Single sample
+from feature_extraction import extract_features
+
+code = '''
+def task_func(x):
+    return x + 1
+'''
+
+prompt = "Write a function task_func that increments x by 1."
+
+features = extract_features(code, prompt)
+print(features)
+Batch mode
+import pandas as pd
+from feature_extraction import extract_features_batch
+
+df = pd.DataFrame({
+    "generated_code": ["def f(x): return x"],
+    "prompt": ["Write a function f that returns x."]
+})
+
+feat_df = extract_features_batch(df, code_col="generated_code", prompt_col="prompt")
+print(feat_df.head())
