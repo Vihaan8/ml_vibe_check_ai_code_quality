@@ -11,3 +11,4 @@ data/phase1/features_bigcodebench_radon_test.csv
 data/phase1/features_bigcodebench_radon.csv
 data/phase1/*.csv
 data/phase1/splits/*.csv
+data/splits/
