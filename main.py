@@ -1,7 +1,8 @@
 """
-main.py — Vibe Check pipeline orchestrator
+main.py
 
-Runs the full pipeline end-to-end or individual stages:
+Vibe Check pipeline orchestrator. Runs the full pipeline end-to-end or
+individual stages:
   1. Data collection and preprocessing
   2. Feature engineering
   3. Model training and evaluation
@@ -10,14 +11,14 @@ By default, only model training runs (stage 3). Preprocessing and feature
 engineering are skipped unless explicitly requested, since they only need
 to run once and the outputs are cached as CSVs.
 
-Usage
------
-  python main.py                        # train all models (default)
-  python main.py --all                  # run everything from scratch
-  python main.py --preprocess           # run only data collection + splitting
-  python main.py --features             # run only feature extraction
-  python main.py --models v1            # train only v1 models
-  python main.py --models v2            # train only v2 models
+Usage:
+  python main.py                             # train all models (default)
+  python main.py --all                       # run everything from scratch
+  python main.py --preprocess                # run only data collection + splitting
+  python main.py --features                  # run only feature extraction
+  python main.py --models baseline           # train only baseline models
+  python main.py --models tfidf              # train only tfidf models
+  python main.py --models crossval           # train only crossval models
 """
 
 import argparse
@@ -35,9 +36,7 @@ TRAIN_FEAT    = SPLITS_DIR / "train_features.csv"
 
 def run(cmd, description):
     """Run a command, print what's happening, and exit on failure."""
-    print(f"\n{'=' * 60}")
-    print(f"  {description}")
-    print(f"{'=' * 60}\n")
+    print(f"\n  {description}\n")
     result = subprocess.run(cmd, cwd=ROOT)
     if result.returncode != 0:
         print(f"\nFailed: {description}")
@@ -76,15 +75,20 @@ def stage_features():
 
 def stage_models(version="all"):
     """Stage 3: Train and evaluate models."""
-    if version in ("all", "v1"):
+    if version in ("all", "baseline"):
         run(
-            [sys.executable, "models/train_models_v1.py"],
-            "Training v1 models (static features only: LogReg + LightGBM)",
+            [sys.executable, "models/train_baseline.py"],
+            "Training baseline models (static features: LogReg + LightGBM)",
         )
-    if version in ("all", "v2"):
+    if version in ("all", "tfidf"):
         run(
-            [sys.executable, "models/train_models_v2.py"],
-            "Training v2 models (static + TF-IDF: LogReg + LightGBM + Random Forest)",
+            [sys.executable, "models/train_tfidf.py"],
+            "Training tfidf models (static + TF-IDF: LogReg + LightGBM + RF)",
+        )
+    if version in ("all", "crossval"):
+        run(
+            [sys.executable, "models/train_crossval.py"],
+            "Training crossval models (static features + GroupKFold CV: LogReg + RF + XGBoost)",
         )
 
 
@@ -118,8 +122,8 @@ def main():
     )
     parser.add_argument(
         "--models", nargs="?", const="all", default=None,
-        choices=["all", "v1", "v2"],
-        help="Train models. Options: all (default), v1, v2",
+        choices=["all", "baseline", "tfidf", "crossval"],
+        help="Train models. Options: all (default), baseline, tfidf, crossval",
     )
     args = parser.parse_args()
 

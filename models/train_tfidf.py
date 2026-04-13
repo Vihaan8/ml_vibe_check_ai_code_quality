@@ -1,5 +1,5 @@
 """
-train_models_v2.py
+train_tfidf.py
 
 Defect prediction with TF-IDF + static features. Combines raw code text
 (TF-IDF tokens) with the 17 static features from feature extraction to give
@@ -8,9 +8,9 @@ models richer signal than summary statistics alone.
 Trains Logistic Regression, LightGBM, and Random Forest.
 
 Run from the project root:
-    python3 models/train_models_v2.py
+    python3 models/train_tfidf.py
 
-Output goes into models/outputs_v2/
+Output goes into models/outputs_tfidf/
 """
 
 import pickle
@@ -47,7 +47,7 @@ TRAIN_RAW  = Path("data/clean/splits/train.csv")
 VAL_RAW    = Path("data/clean/splits/val.csv")
 TEST_RAW   = Path("data/clean/splits/test.csv")
 
-OUT = Path("models/outputs_v2")
+OUT = Path("models/outputs_tfidf")
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Feature columns
@@ -265,7 +265,7 @@ def plot_pr_curves(probs: dict, y_test):
     fig.tight_layout()
     fig.savefig(OUT / "pr_curves.png", dpi=150)
     plt.close(fig)
-    print(f"  Saved -> models/outputs_v2/pr_curves.png")
+    print(f"  Saved -> models/outputs_tfidf/pr_curves.png")
 
 
 def plot_logreg_top_features(model, word_tfidf, char_tfidf):
@@ -299,7 +299,7 @@ def plot_logreg_top_features(model, word_tfidf, char_tfidf):
     fig.tight_layout()
     fig.savefig(OUT / "feature_importance.png", dpi=150)
     plt.close(fig)
-    print(f"  Saved -> models/outputs_v2/feature_importance.png")
+    print(f"  Saved -> models/outputs_tfidf/feature_importance.png")
 
 
 def print_comparison(results: list, fout):
@@ -378,7 +378,7 @@ def main():
     df_test["rf_prob"]     = rf_prob
     df_test["rf_pred"]     = rf_pred
     df_test.to_csv(OUT / "results.csv", index=False)
-    print(f"  Saved -> models/outputs_v2/results.csv")
+    print(f"  Saved -> models/outputs_tfidf/results.csv")
 
     # Save models + vectorizers
     for fname, obj in [
@@ -390,14 +390,14 @@ def main():
     ]:
         with open(OUT / fname, "wb") as f:
             pickle.dump(obj, f)
-    print(f"  Saved -> models/outputs_v2/*.pkl")
+    print(f"  Saved -> models/outputs_tfidf/*.pkl")
 
     # Plots
     print("\nGenerating plots")
     plot_pr_curves(probs_dict, y_te)
     plot_logreg_top_features(logreg, word_tfidf, char_tfidf)
 
-    print("\nDone! All outputs saved to models/outputs_v2/")
+    print("\nDone! All outputs saved to models/outputs_tfidf/")
 
 
 if __name__ == "__main__":

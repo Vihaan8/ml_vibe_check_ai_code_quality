@@ -13,9 +13,9 @@ We train on 123,000 labeled code samples across 57 LLMs using the BigCodeBench b
 flowchart LR
     A["BigCodeBench\n1,140 tasks\n57 LLMs"] --> B["Data Collection\ncollect_data.py"]
     B --> C["samples.csv\n123,416 rows"]
-    C --> D["Split by Task ID\n70/15/15"]
+    C --> D["Split by Task ID\n70 / 15 / 15"]
     D --> E["Feature Extraction\n17 static features"]
-    E --> F["Model Training\nLogReg, LightGBM, RF"]
+    E --> F["Model Training\n3 approaches"]
     F --> G["Evaluation\nAUC-ROC, F1\non held-out test set"]
 ```
 
@@ -36,10 +36,12 @@ flowchart LR
 │   └── run_feature_extraction.py    # Runs extraction over a full CSV
 ├── models/
 │   ├── README.md                    # Detailed model documentation
-│   ├── train_models_v1.py           # Static features only
-│   ├── train_models_v2.py           # Static + TF-IDF features
-│   ├── outputs_v1/                  # Saved models, metrics, plots (v1)
-│   └── outputs_v2/                  # Saved models, metrics, plots (v2)
+│   ├── train_baseline.py            # Static features, val-set tuning
+│   ├── train_tfidf.py              # Static + TF-IDF, val-set tuning
+│   ├── train_crossval.py           # Static features, GroupKFold CV tuning
+│   ├── outputs_baseline/            # Saved models, metrics, plots
+│   ├── outputs_tfidf/
+│   └── outputs_crossval/
 └── archive/                         # Exploratory notebooks and deprecated files
 ```
 
@@ -131,36 +133,38 @@ Prompt-code alignment features show near-zero correlation, indicating that simpl
 
 ## Model Training and Evaluation
 
-We frame this as binary classification: does a given code sample pass or fail its test suite? Hyperparameters are tuned on the validation set only. The test set is used once for final evaluation.
+We frame this as binary classification: does a given code sample pass or fail its test suite? Three modeling approaches were tried, each exploring a different angle.
 
 ```mermaid
 flowchart LR
-    subgraph Input
-        TR["Train\n86,398 rows\n798 tasks"]
-        VA["Validation\n18,508 rows\n171 tasks"]
-        TE["Test\n18,510 rows\n171 tasks"]
+    subgraph baseline["Baseline"]
+        B1["17 static\nfeatures"] --> B2["LogReg + LightGBM\nval-set tuning"]
+        B2 --> B3["Best AUC\n0.608"]
     end
 
-    TR --> T["Hyperparameter\nTuning"]
-    VA --> T
-    T --> B["Best Model\nper algorithm"]
-    B --> E["Test Set\nEvaluation"]
-    TE --> E
-    E --> R["AUC-ROC, F1\nClassification Report\nPR Curves"]
+    subgraph tfidf["TF-IDF"]
+        T1["17 static +\n20K TF-IDF"] --> T2["LogReg + LightGBM + RF\nval-set tuning"]
+        T2 --> T3["Best AUC\n0.635"]
+    end
+
+    subgraph crossval["Cross-Validation"]
+        C1["17 static\nfeatures"] --> C2["LogReg + RF + XGBoost\nGroupKFold CV"]
+        C2 --> C3["Best AUC\n0.608"]
+    end
 ```
 
-Two model versions were trained. See `models/README.md` for full details including hyperparameter grids and per-class metrics.
+See `models/README.md` for full details including hyperparameter grids and per-class metrics.
 
-### Version 1: Static features only
+### Baseline: static features, validation-set tuning
 
-Logistic Regression and LightGBM trained on the 17 hand-crafted features.
+Logistic Regression and LightGBM trained on the 17 hand-crafted features, tuning hyperparameters by evaluating on the validation set.
 
 | Model | AUC-ROC | F1 | Accuracy |
 |---|---|---|---|
 | Logistic Regression | 0.604 | 0.538 | 0.561 |
 | LightGBM | 0.608 | 0.516 | 0.582 |
 
-### Version 2: Static + TF-IDF features
+### TF-IDF: static + code text features, validation-set tuning
 
 Adds 20,000 TF-IDF features (10K word n-grams + 10K character n-grams) extracted from the raw code text, giving models access to actual code tokens rather than just summary statistics.
 
@@ -170,15 +174,25 @@ Adds 20,000 TF-IDF features (10K word n-grams + 10K character n-grams) extracted
 | LightGBM | Static + TF-IDF (20,017) | 0.634 | 0.529 | 0.611 |
 | Random Forest | Static only (17) | 0.605 | 0.537 | 0.581 |
 
-Adding TF-IDF improved AUC by about 0.03 for Logistic Regression and LightGBM. Random Forest uses only the 17 static features because RF on 20K sparse columns is prohibitively slow.
+### Cross-validation: static features, StratifiedGroupKFold tuning
 
-All models handle the 41/59 class imbalance through class weighting (balanced class weights for LogReg and RF, scale_pos_weight for LightGBM). We report AUC-ROC and F1 rather than accuracy, since accuracy is misleading on imbalanced datasets.
+Logistic Regression, Random Forest, and XGBoost trained on the 17 static features, with hyperparameters tuned via 5-fold StratifiedGroupKFold cross-validation (grouped by task_id). The final Logistic Regression model is retrained on train+val before test evaluation.
+
+| Model | AUC-ROC | F1 | Accuracy |
+|---|---|---|---|
+| Logistic Regression | 0.608 | 0.536 | 0.561 |
+| XGBoost | 0.640 | 0.329 | 0.581 |
+| Random Forest | 0.584 | 0.433 | 0.571 |
 
 ### Key findings
 
-The TF-IDF features help because they capture patterns the static features miss: specific function names, import patterns, and syntax constructs that correlate with pass/fail. However, the overall AUC ceiling around 0.635 suggests that purely static features (even with TF-IDF) have limited predictive power for this task. The signal is real but modest.
+Adding TF-IDF improved AUC by about 0.03 for Logistic Regression and LightGBM. The TF-IDF features capture patterns the static features miss: specific function names, import patterns, and syntax constructs that correlate with pass/fail.
 
-Grace's exploratory analysis (in `archive/grace_model.ipynb`) also evaluated XGBoost with hyperparameter tuning via StratifiedGroupKFold cross-validation. The tuned XGBoost achieved 0.640 AUC but only 0.329 F1 due to very low recall for the positive class. Logistic Regression was selected as the final model because it delivered the best balance of AUC, F1, and stability across train/validation/test.
+Cross-validation tuning confirmed that Logistic Regression is the most stable model. It shows nearly identical train and validation AUC (0.638 vs 0.637), while Random Forest and XGBoost both overfit significantly (RF: 0.976 train vs 0.584 val). XGBoost achieved the highest raw AUC (0.640) but with an F1 of only 0.329 due to very low recall, making it impractical without threshold tuning.
+
+Overall, Logistic Regression was selected as the recommended model because it delivers the best balance of AUC, F1, and generalization stability across all three approaches. The AUC ceiling around 0.635 suggests that purely static features have limited but real predictive power for this task.
+
+All models handle the 41/59 class imbalance through class weighting (balanced class weights for LogReg and RF, scale_pos_weight for LightGBM). We report AUC-ROC and F1 rather than accuracy, since accuracy is misleading on imbalanced datasets.
 
 
 ## How to Run
@@ -186,18 +200,19 @@ Grace's exploratory analysis (in `archive/grace_model.ipynb`) also evaluated XGB
 Install dependencies:
 
 ```bash
-pip install pandas numpy radon scikit-learn lightgbm shap matplotlib scipy datasets requests tqdm
+pip install pandas numpy radon scikit-learn lightgbm xgboost shap matplotlib scipy datasets requests tqdm
 ```
 
 The `main.py` script orchestrates the pipeline:
 
 ```bash
-python main.py --all                  # full pipeline from scratch
-python main.py                        # train all models (default, assumes data exists)
-python main.py --preprocess           # download data and split
-python main.py --features             # extract features from splits
-python main.py --models v1            # train v1 only (static features)
-python main.py --models v2            # train v2 only (static + TF-IDF)
+python main.py --all                       # full pipeline from scratch
+python main.py                             # train all models (default, assumes data exists)
+python main.py --preprocess                # download data and split
+python main.py --features                  # extract features from splits
+python main.py --models baseline           # static features, val-set tuning
+python main.py --models tfidf              # static + TF-IDF, val-set tuning
+python main.py --models crossval           # static features, GroupKFold CV
 ```
 
 Or run each script directly:
@@ -206,8 +221,9 @@ Or run each script directly:
 python data/preprocessing/collect_data.py
 python data/preprocessing/split_data.py --input data/clean/samples.csv --outdir data/clean/splits
 python feature_engineering/run_feature_extraction.py --input data/clean/splits/train.csv --out data/clean/splits/train_features.csv
-python models/train_models_v1.py
-python models/train_models_v2.py
+python models/train_baseline.py
+python models/train_tfidf.py
+python models/train_crossval.py
 ```
 
 

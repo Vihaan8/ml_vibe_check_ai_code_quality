@@ -1,13 +1,13 @@
 """
-train_models_v1.py
+train_baseline.py
 
 Defect prediction with static features only. Trains Logistic Regression
 and LightGBM on the 17 static features from feature extraction.
 
 Run from the project root:
-    python3 models/train_models_v1.py
+    python3 models/train_baseline.py
 
-Output goes into models/outputs_v1/
+Output goes into models/outputs_baseline/
 """
 
 import pickle
@@ -37,7 +37,7 @@ warnings.filterwarnings("ignore")
 TRAIN = Path("data/clean/splits/train_features.csv")
 VAL   = Path("data/clean/splits/val_features.csv")
 TEST  = Path("data/clean/splits/test_features.csv")
-OUT   = Path("models/outputs_v1")
+OUT   = Path("models/outputs_baseline")
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Feature columns (must match feature extraction output)
@@ -119,7 +119,7 @@ def plot_logreg(model):
     fig.tight_layout()
     fig.savefig(OUT / "logreg_coefs.png", dpi=150)
     plt.close(fig)
-    print(f"  Saved -> models/outputs_v1/logreg_coefs.png")
+    print(f"  Saved -> models/outputs_baseline/logreg_coefs.png")
 
 
 # LightGBM
@@ -171,7 +171,7 @@ def plot_shap(model, X_tr):
     fig.tight_layout()
     fig.savefig(OUT / "lgbm_shap.png", dpi=150)
     plt.close(fig)
-    print(f"  Saved -> models/outputs_v1/lgbm_shap.png")
+    print(f"  Saved -> models/outputs_baseline/lgbm_shap.png")
 
 
 def main():
@@ -196,7 +196,7 @@ def main():
         lgbm_pred = lgbm.predict(X_te)
         report("LightGBM", y_te, lgbm_pred, lgbm_prob, fout)
 
-    print(f"  Saved -> models/outputs_v1/metrics.txt")
+    print(f"  Saved -> models/outputs_baseline/metrics.txt")
 
     # Save predictions
     df_test["logreg_prob"] = lr_prob
@@ -204,15 +204,15 @@ def main():
     df_test["lgbm_prob"]   = lgbm_prob
     df_test["lgbm_pred"]   = lgbm_pred
     df_test.to_csv(OUT / "results.csv", index=False)
-    print(f"  Saved -> models/outputs_v1/results.csv")
+    print(f"  Saved -> models/outputs_baseline/results.csv")
 
     # Save model files
     with open(OUT / "logreg_model.pkl", "wb") as f:
         pickle.dump(logreg, f)
     with open(OUT / "lgbm_model.pkl", "wb") as f:
         pickle.dump(lgbm, f)
-    print(f"  Saved -> models/outputs_v1/logreg_model.pkl")
-    print(f"  Saved -> models/outputs_v1/lgbm_model.pkl")
+    print(f"  Saved -> models/outputs_baseline/logreg_model.pkl")
+    print(f"  Saved -> models/outputs_baseline/lgbm_model.pkl")
 
     # Plots
     print("\nGenerating plots")
@@ -236,9 +236,9 @@ def main():
     fig.tight_layout()
     fig.savefig(OUT / "pr_curves.png", dpi=150)
     plt.close(fig)
-    print(f"  Saved -> models/outputs_v1/pr_curves.png")
+    print(f"  Saved -> models/outputs_baseline/pr_curves.png")
 
-    print("\nDone! All outputs saved to models/outputs_v1/")
+    print("\nDone! All outputs saved to models/outputs_baseline/")
 
 
 if __name__ == "__main__":
