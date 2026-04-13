@@ -1,14 +1,14 @@
 """
-train_models_v2.py  —  Defect prediction with TF-IDF + static features
-=======================================================================
-Combines raw code text (TF-IDF tokens) with the 17 static features
-from feature extraction to give models much richer signal than numbers alone.
+train_models_v2.py
+
+Defect prediction with TF-IDF + static features. Combines raw code text
+(TF-IDF tokens) with the 17 static features from feature extraction to give
+models richer signal than summary statistics alone.
 
 Trains Logistic Regression, LightGBM, and Random Forest.
 
 Run from the project root:
-
-  python3 models/train_models_v2.py
+    python3 models/train_models_v2.py
 
 Output goes into models/outputs_v2/
 """
@@ -38,9 +38,7 @@ import lightgbm as lgb
 
 warnings.filterwarnings("ignore")
 
-# ── Paths ──────────────────────────────────────────────────
-# We need both the original splits (for raw code) and the
-# feature splits (for the 17 static features)
+# Paths (both raw splits for TF-IDF and feature splits for static features)
 TRAIN_FEAT = Path("data/clean/splits/train_features.csv")
 VAL_FEAT   = Path("data/clean/splits/val_features.csv")
 TEST_FEAT  = Path("data/clean/splits/test_features.csv")
@@ -52,7 +50,7 @@ TEST_RAW   = Path("data/clean/splits/test.csv")
 OUT = Path("models/outputs_v2")
 OUT.mkdir(parents=True, exist_ok=True)
 
-# ── Feature columns ────────────────────────────────────────
+# Feature columns
 FEATURE_COLS = [
     "classical_loc",
     "classical_cyclomatic_complexity",
@@ -75,10 +73,6 @@ FEATURE_COLS = [
 LABEL = "label"
 
 
-# ══════════════════════════════════════════════════════════
-# DATA LOADING
-# ══════════════════════════════════════════════════════════
-
 def load_data(feat_path, raw_path):
     """Load feature CSV + raw CSV, return X_static, y, code_texts."""
     feat_df = pd.read_csv(feat_path)
@@ -94,10 +88,6 @@ def load_data(feat_path, raw_path):
 
     return X_static, y, texts, feat_df
 
-
-# ══════════════════════════════════════════════════════════
-# BUILD TF-IDF + COMBINED MATRIX
-# ══════════════════════════════════════════════════════════
 
 def build_tfidf(train_texts, val_texts, test_texts):
     """
@@ -152,10 +142,6 @@ def combine(X_static, word_tfidf, char_tfidf):
     return hstack([static_sparse, word_tfidf, char_tfidf])
 
 
-# ══════════════════════════════════════════════════════════
-# METRICS
-# ══════════════════════════════════════════════════════════
-
 def report(name, y_true, y_pred, y_prob, fout):
     auc = roc_auc_score(y_true, y_prob)
     f1  = f1_score(y_true, y_pred)
@@ -170,12 +156,10 @@ def report(name, y_true, y_pred, y_prob, fout):
     return auc, f1
 
 
-# ══════════════════════════════════════════════════════════
-# MODEL 1 — Logistic Regression
-# ══════════════════════════════════════════════════════════
+# Logistic Regression
 
 def train_logreg(X_tr, y_tr, X_va, y_va):
-    print("\n── Logistic Regression ──────────────────────────────")
+    print("\nLogistic Regression")
     best_auc, best_model = -1, None
     for C in [0.01, 0.1, 1.0, 10.0]:
         m = LogisticRegression(
@@ -192,12 +176,10 @@ def train_logreg(X_tr, y_tr, X_va, y_va):
     return best_model
 
 
-# ══════════════════════════════════════════════════════════
-# MODEL 2 — LightGBM
-# ══════════════════════════════════════════════════════════
+# LightGBM
 
 def train_lgbm(X_tr, y_tr, X_va, y_va):
-    print("\n── LightGBM ─────────────────────────────────────────")
+    print("\nLightGBM")
     neg, pos  = np.bincount(y_tr)
     scale_pos = neg / pos
     print(f"  scale_pos_weight={scale_pos:.2f}")
@@ -228,12 +210,10 @@ def train_lgbm(X_tr, y_tr, X_va, y_va):
     return best_model
 
 
-# ══════════════════════════════════════════════════════════
-# MODEL 3 — Random Forest
-# ══════════════════════════════════════════════════════════
+# Random Forest
 
 def train_rf(X_tr, y_tr, X_va, y_va):
-    print("\n── Random Forest ────────────────────────────────────")
+    print("\nRandom Forest")
     # Random Forest doesn't work well on very high-dimensional sparse TF-IDF
     # so we use only the 17 static features for this one
     print("  (uses static features only — RF + sparse TF-IDF is slow)")
@@ -264,10 +244,6 @@ def train_rf(X_tr, y_tr, X_va, y_va):
     print(f"  Best val AUC={best_auc:.4f}")
     return best_model
 
-
-# ══════════════════════════════════════════════════════════
-# PLOTS
-# ══════════════════════════════════════════════════════════
 
 def plot_pr_curves(probs: dict, y_test):
     colors = {
@@ -326,10 +302,6 @@ def plot_logreg_top_features(model, word_tfidf, char_tfidf):
     print(f"  Saved -> models/outputs_v2/feature_importance.png")
 
 
-# ══════════════════════════════════════════════════════════
-# COMPARISON TABLE
-# ══════════════════════════════════════════════════════════
-
 def print_comparison(results: list, fout):
     header = f"\n{'='*55}\n  Model comparison (test set)\n{'='*55}"
     rows   = f"  {'Model':<25} {'AUC-ROC':>8}  {'F1':>6}\n  {'-'*42}"
@@ -340,14 +312,8 @@ def print_comparison(results: list, fout):
     fout.write(block + "\n")
 
 
-# ══════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════
-
 def main():
-    print("="*55)
-    print("  Phase 2 v2 — TF-IDF + Static Features")
-    print("="*55)
+    print("Training v2 models (TF-IDF + static features)")
 
     # Load data
     print("\nLoading data ...")
@@ -373,7 +339,7 @@ def main():
     rf     = train_rf(X_tr, y_tr, X_va, y_va)
 
     # Test-set evaluation
-    print("\n── Test-set results ─────────────────────────────────")
+    print("\nTest-set results")
     comparison = []
     probs_dict = {}
 
@@ -427,7 +393,7 @@ def main():
     print(f"  Saved -> models/outputs_v2/*.pkl")
 
     # Plots
-    print("\n── Generating plots ─────────────────────────────────")
+    print("\nGenerating plots")
     plot_pr_curves(probs_dict, y_te)
     plot_logreg_top_features(logreg, word_tfidf, char_tfidf)
 

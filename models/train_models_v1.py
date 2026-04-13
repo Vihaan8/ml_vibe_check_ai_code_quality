@@ -1,12 +1,11 @@
 """
-train_models_v1.py  —  Defect prediction with static features only
-===================================================================
-Trains Logistic Regression and LightGBM on the 17 static features
-from feature extraction.
+train_models_v1.py
+
+Defect prediction with static features only. Trains Logistic Regression
+and LightGBM on the 17 static features from feature extraction.
 
 Run from the project root:
-
-  python3 models/train_models_v1.py
+    python3 models/train_models_v1.py
 
 Output goes into models/outputs_v1/
 """
@@ -34,14 +33,14 @@ import lightgbm as lgb
 
 warnings.filterwarnings("ignore")
 
-# ── Paths ──────────────────────────────────────────────────
+# Paths
 TRAIN = Path("data/clean/splits/train_features.csv")
 VAL   = Path("data/clean/splits/val_features.csv")
 TEST  = Path("data/clean/splits/test_features.csv")
 OUT   = Path("models/outputs_v1")
 OUT.mkdir(parents=True, exist_ok=True)
 
-# ── Feature columns (must match Phase 1 output) ────────────
+# Feature columns (must match feature extraction output)
 FEATURE_COLS = [
     "classical_loc",
     "classical_cyclomatic_complexity",
@@ -64,7 +63,6 @@ FEATURE_COLS = [
 LABEL = "label"
 
 
-# ── Load a feature CSV ─────────────────────────────────────
 def load(path):
     df = pd.read_csv(path)
     X  = df[FEATURE_COLS].fillna(0).values.astype(float)
@@ -72,7 +70,6 @@ def load(path):
     return X, y, df
 
 
-# ── Print + save metrics ───────────────────────────────────
 def report(name, y_true, y_pred, y_prob, fout):
     auc = roc_auc_score(y_true, y_prob)
     f1  = f1_score(y_true, y_pred)
@@ -86,11 +83,9 @@ def report(name, y_true, y_pred, y_prob, fout):
     fout.write(txt + "\n")
 
 
-# ══════════════════════════════════════════════════════════
-# MODEL 1 — Logistic Regression
-# ══════════════════════════════════════════════════════════
+# Logistic Regression
 def train_logreg(X_tr, y_tr, X_va, y_va):
-    print("\n── Logistic Regression ──────────────────────────────")
+    print("\nLogistic Regression")
     best_auc, best_model = -1, None
     for C in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]:
         pipe = Pipeline([
@@ -127,11 +122,9 @@ def plot_logreg(model):
     print(f"  Saved -> models/outputs_v1/logreg_coefs.png")
 
 
-# ══════════════════════════════════════════════════════════
-# MODEL 2 — LightGBM
-# ══════════════════════════════════════════════════════════
+# LightGBM
 def train_lgbm(X_tr, y_tr, X_va, y_va):
-    print("\n── LightGBM ─────────────────────────────────────────")
+    print("\nLightGBM")
     neg, pos  = np.bincount(y_tr)
     scale_pos = neg / pos
     print(f"  Class imbalance -> scale_pos_weight={scale_pos:.2f}")
@@ -181,9 +174,6 @@ def plot_shap(model, X_tr):
     print(f"  Saved -> models/outputs_v1/lgbm_shap.png")
 
 
-# ══════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════
 def main():
     print("Loading feature files ...")
     X_tr, y_tr, _       = load(TRAIN)
@@ -196,7 +186,7 @@ def main():
     lgbm   = train_lgbm(X_tr, y_tr, X_va, y_va)
 
     # Evaluate on test set
-    print("\n── Test-set results ─────────────────────────────────")
+    print("\nTest-set results")
     with open(OUT / "metrics.txt", "w") as fout:
         lr_prob  = logreg.predict_proba(X_te)[:, 1]
         lr_pred  = logreg.predict(X_te)
@@ -225,7 +215,7 @@ def main():
     print(f"  Saved -> models/outputs_v1/lgbm_model.pkl")
 
     # Plots
-    print("\n── Generating plots ─────────────────────────────────")
+    print("\nGenerating plots")
     plot_logreg(logreg)
     plot_shap(lgbm, X_tr)
 
