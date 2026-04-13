@@ -1,8 +1,8 @@
 """
 Downloads BigCodeBench task descriptions, LLM-generated code samples, and
-pass/fail eval results, then merges them into two CSVs in data/processed/.
+pass/fail eval results, then merges them into a CSV in data/clean/.
 
-Run from the project root: python data/collect_data.py
+Run from the project root: python data/preprocessing/collect_data.py
 """
 
 import json
@@ -15,9 +15,9 @@ import requests
 from datasets import load_dataset
 from tqdm import tqdm
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
-PROCESSED = ROOT / "processed"
+PROCESSED = ROOT / "clean"
 SAMPLES_ZIP = RAW / "sanitized_calibrated_samples.zip"
 SAMPLES_DIR = RAW / "sanitized_calibrated_samples"
 EVAL_DIR = RAW / "eval_results"

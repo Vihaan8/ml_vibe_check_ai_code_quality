@@ -1,6 +1,6 @@
 """
-run_phase1.py
-Phase 1 pipeline: load BigCodeBench CSV, run feature extraction, save output.
+run_feature_extraction.py
+Feature extraction pipeline: load BigCodeBench CSV, run feature extraction, save output.
 
 Confirmed column schema (from actual data):
     task_id, model_name, split, solution, label,
@@ -8,13 +8,13 @@ Confirmed column schema (from actual data):
 
 Usage
 -----
-    python run_phase1.py --input bigcodebench.csv
-    python run_phase1.py --input bigcodebench.csv --max-rows 5000   # quick test
-    python run_phase1.py --skip-download                            # offline demo
+    python feature_engineering/run_feature_extraction.py --input data/clean/samples.csv
+    python feature_engineering/run_feature_extraction.py --input data/clean/samples.csv --max-rows 5000
+    python feature_engineering/run_feature_extraction.py --skip-download
 
 Output
 ------
-    features_bigcodebench.csv  —  metadata + 62 features + label, ready for Phase 2
+    features CSV with metadata + 16 features + label, ready for modeling
 """
 
 import pandas as pd
