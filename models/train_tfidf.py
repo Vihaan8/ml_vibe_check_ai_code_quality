@@ -67,8 +67,9 @@ FEATURE_COLS = [
     "align_missing_libs",
     "align_length_ratio",
     "smell_hardcoded_return_funcs",
+    "smell_placeholder_hits",
     "smell_is_very_short",
-    "meta_parse_error",
+    "smell_relative_length",
 ]
 LABEL = "label"
 
@@ -146,7 +147,7 @@ def report(name, y_true, y_pred, y_prob, fout):
     auc = roc_auc_score(y_true, y_prob)
     f1  = f1_score(y_true, y_pred)
     txt = (
-        f"\n{'='*55}\n  {name}\n{'='*55}\n"
+        f"\n  {name}\n"
         f"  AUC-ROC : {auc:.4f}\n"
         f"  F1      : {f1:.4f}\n\n"
         + classification_report(y_true, y_pred, digits=4)
@@ -254,7 +255,7 @@ def plot_pr_curves(probs: dict, y_test):
     fig, ax = plt.subplots(figsize=(6, 5))
     for name, prob in probs.items():
         prec, rec, _ = precision_recall_curve(y_test, prob)
-        ap = float(np.trapz(prec[::-1], rec[::-1]))
+        ap = float((getattr(np, "trapz", None) or np.trapezoid)(prec[::-1], rec[::-1]))
         ax.plot(rec, prec, label=f"{name} (AP={ap:.3f})",
                 color=colors.get(name, "#888780"), lw=1.8)
     ax.set_xlabel("Recall")
@@ -303,8 +304,8 @@ def plot_logreg_top_features(model, word_tfidf, char_tfidf):
 
 
 def print_comparison(results: list, fout):
-    header = f"\n{'='*55}\n  Model comparison (test set)\n{'='*55}"
-    rows   = f"  {'Model':<25} {'AUC-ROC':>8}  {'F1':>6}\n  {'-'*42}"
+    header = f"\n  Model comparison (test set)"
+    rows   = f"  {'Model':<25} {'AUC-ROC':>8}  {'F1':>6}"
     for name, auc, f1 in sorted(results, key=lambda x: -x[1]):
         rows += f"\n  {name:<25} {auc:>8.4f}  {f1:>6.4f}"
     block = header + "\n" + rows + "\n"
@@ -344,7 +345,7 @@ def main():
     probs_dict = {}
 
     with open(OUT / "metrics.txt", "w") as fout:
-        fout.write("Phase 2 v2 — TF-IDF + static features\n")
+        fout.write("TF-IDF + static features\n")
 
         lr_prob  = logreg.predict_proba(X_te)[:, 1]
         lr_pred  = logreg.predict(X_te)

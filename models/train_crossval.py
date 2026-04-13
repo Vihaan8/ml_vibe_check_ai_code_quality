@@ -49,7 +49,6 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 # Feature columns
 FEATURE_COLS = [
-    "meta_parse_error",
     "classical_loc",
     "classical_cyclomatic_complexity",
     "classical_max_nesting_depth",
@@ -65,7 +64,9 @@ FEATURE_COLS = [
     "align_missing_libs",
     "align_length_ratio",
     "smell_hardcoded_return_funcs",
+    "smell_placeholder_hits",
     "smell_is_very_short",
+    "smell_relative_length",
 ]
 LABEL = "label"
 
@@ -196,7 +197,7 @@ def plot_pr_curves(probs, y_test):
     fig, ax = plt.subplots(figsize=(6, 5))
     for name, prob in probs.items():
         prec, rec, _ = precision_recall_curve(y_test, prob)
-        ap = float(np.trapz(prec[::-1], rec[::-1]))
+        ap = float((getattr(np, "trapz", None) or np.trapezoid)(prec[::-1], rec[::-1]))
         ax.plot(rec, prec, label=f"{name} (AP={ap:.3f})",
                 color=colors.get(name, "#888780"), lw=1.8)
     ax.set_xlabel("Recall")

@@ -2,32 +2,53 @@
 
 Binary classification: given a code sample and its static features, predict whether it passes its test suite (label=1) or fails (label=0).
 
-Three modeling approaches were tried, each exploring a different angle. All use the same train/val/test split (70/15/15, grouped by task_id).
+Four baselines and three learned modeling approaches were tried. All use the same train/val/test split (70/15/15, grouped by task_id) and 18 static features (see feature engineering).
 
 ```mermaid
 flowchart LR
+    subgraph baselines["Baselines"]
+        BL["Majority class\nRandom\nCode length\nLOC threshold"]
+    end
+
     subgraph baseline["Baseline"]
-        B1["17 static features\nval-set tuning"] --> B2["LogReg\nLightGBM"]
+        B1["18 static features\nval-set tuning"] --> B2["LogReg\nLightGBM"]
     end
 
     subgraph tfidf["TF-IDF"]
-        T1["17 static + 20K TF-IDF\nval-set tuning"] --> T2["LogReg\nLightGBM\nRandom Forest"]
+        T1["18 static + 20K TF-IDF\nval-set tuning"] --> T2["LogReg\nLightGBM\nRandom Forest"]
     end
 
     subgraph crossval["Cross-Validation"]
-        C1["17 static features\n5-fold GroupKFold CV"] --> C2["LogReg\nRandom Forest\nXGBoost"]
+        C1["18 static features\n5-fold GroupKFold CV"] --> C2["LogReg\nRandom Forest\nXGBoost"]
     end
 
-    baseline -.->|"+TF-IDF features\n+0.03 AUC"| tfidf
-    baseline -.->|"+CV tuning\nsame AUC, better rigor"| crossval
+    baselines -.->|"do learned\nmodels beat these?"| baseline
+    baseline -.->|"+TF-IDF features"| tfidf
+    baseline -.->|"+CV tuning"| crossval
 ```
+
+
+## Baselines (No Learning)
+
+**Script**: `train_baselines.py`
+
+Simple heuristics to benchmark against. If learned models can't beat these, the features aren't adding value.
+
+| Baseline | Method | What it tests |
+|---|---|---|
+| Majority class | Always predict "fail" | Floor performance |
+| Random stratified | Coin flip at 59/41 class proportions | Expected AUC = 0.50 |
+| Code length > task median | Predict pass if LOC exceeds the median for that task | Whether length alone is a signal |
+| LOC threshold | Best single threshold on classical_loc | Whether one feature does most of the work |
+
+Outputs saved to `outputs_baselines/`.
 
 
 ## Baseline: Static Features, Validation-Set Tuning
 
 **Script**: `train_baseline.py`
 
-Trains on the 17 hand-crafted features from feature extraction. This is the starting point to see how far classical software metrics, AST structure, prompt alignment, and LLM smell features can take us. Hyperparameters are tuned by evaluating on the validation set.
+Trains on the 18 hand-crafted features from feature extraction. This is the starting point to see how far classical software metrics, AST structure, prompt alignment, and LLM smell features can take us. Hyperparameters are tuned by evaluating on the validation set.
 
 **Logistic Regression**: StandardScaler pipeline, LBFGS solver, balanced class weights. C tuned over {0.001, 0.01, 0.1, 1, 10, 100}.
 
@@ -37,8 +58,8 @@ Trains on the 17 hand-crafted features from feature extraction. This is the star
 
 | Model | AUC-ROC | F1 | Accuracy | Precision (pass) | Recall (pass) |
 |---|---|---|---|---|---|
-| Logistic Regression | 0.604 | 0.538 | 0.561 | 0.475 | 0.621 |
-| LightGBM | 0.608 | 0.516 | 0.582 | 0.493 | 0.541 |
+| Logistic Regression | 0.616 | 0.546 | 0.572 | 0.485 | 0.625 |
+| LightGBM | 0.629 | 0.544 | 0.593 | 0.505 | 0.589 |
 
 ### Outputs (in `outputs_baseline/`)
 
@@ -63,23 +84,23 @@ Two TF-IDF vectorizers are fit on the training set only (no data leakage):
 - Word-level (1-2 grams, 10,000 features): captures identifiers like `pd`, `json_normalize`, `DataFrame`
 - Character-level (2-4 grams, 10,000 features): captures syntax like `def `, `try:`, `return`
 
-Combined with the 17 static features, this gives 20,017 total features.
+Combined with the 18 static features, this gives 20,017 total features.
 
 **Logistic Regression**: SAGA solver (efficient for large sparse matrices), C tuned over {0.01, 0.1, 1, 10}.
 
 **LightGBM**: colsample_bytree lowered to 0.3 (since most features are TF-IDF), n_estimators over {300, 500}, learning_rate over {0.05, 0.1}.
 
-**Random Forest**: Uses only the 17 static features (RF on 20K sparse TF-IDF columns is prohibitively slow). n_estimators over {200, 500}, max_depth over {8, 15, None}.
+**Random Forest**: Uses only the 18 static features (RF on 20K sparse TF-IDF columns is prohibitively slow). n_estimators over {200, 500}, max_depth over {8, 15, None}.
 
 ### Test set results
 
 | Model | Features | AUC-ROC | F1 | Accuracy | Precision (pass) | Recall (pass) |
 |---|---|---|---|---|---|---|
-| Logistic Regression | Static + TF-IDF | 0.635 | 0.537 | 0.592 | 0.504 | 0.574 |
-| LightGBM | Static + TF-IDF | 0.634 | 0.529 | 0.611 | 0.528 | 0.530 |
-| Random Forest | Static only | 0.605 | 0.537 | 0.581 | 0.493 | 0.591 |
+| Logistic Regression | Static + TF-IDF | 0.645 | 0.549 | 0.602 | 0.515 | 0.587 |
+| LightGBM | Static + TF-IDF | 0.636 | 0.539 | 0.612 | 0.528 | 0.550 |
+| Random Forest | Static only | 0.620 | 0.546 | 0.592 | 0.504 | 0.596 |
 
-Adding TF-IDF improved AUC by about 0.03 for Logistic Regression and LightGBM.
+Adding TF-IDF improved AUC by about 0.03 for Logistic Regression (0.616 to 0.645).
 
 ### Outputs (in `outputs_tfidf/`)
 
@@ -100,7 +121,7 @@ Adding TF-IDF improved AUC by about 0.03 for Logistic Regression and LightGBM.
 
 **Script**: `train_crossval.py`
 
-Uses the same 17 static features as the baseline but with a more rigorous tuning approach: 5-fold StratifiedGroupKFold cross-validation grouped by task_id. This prevents any task from appearing in both the train and validation folds during CV, matching the evaluation protocol recommended in the SDP literature.
+Uses the same 18 static features as the baseline but with a more rigorous tuning approach: 5-fold StratifiedGroupKFold cross-validation grouped by task_id. This prevents any task from appearing in both the train and validation folds during CV, matching the evaluation protocol recommended in the SDP literature.
 
 **Logistic Regression**: GridSearchCV over C in {0.01, 0.1, 1, 10}, with SimpleImputer (median) + StandardScaler pipeline. Best: C=0.01, CV AUC=0.631. The final model is retrained on train+val before test evaluation.
 
@@ -123,9 +144,9 @@ Logistic Regression is the only model with nearly identical train and validation
 
 | Model | AUC-ROC | F1 | Accuracy | Precision (pass) | Recall (pass) |
 |---|---|---|---|---|---|
-| Logistic Regression | 0.608 | 0.536 | 0.561 | 0.474 | 0.615 |
-| XGBoost (tuned) | 0.640 | 0.329 | 0.581 | 0.579 | 0.230 |
-| Random Forest | 0.584 | 0.433 | 0.571 | -- | -- |
+| Logistic Regression | 0.622 | 0.543 | 0.573 | 0.486 | 0.614 |
+| XGBoost (tuned) | 0.629 | 0.356 | 0.619 | 0.588 | 0.255 |
+| Random Forest | 0.576 | 0.408 | 0.585 | 0.495 | 0.347 |
 
 Logistic Regression was selected as the final model: best F1, most stable, and most interpretable.
 
@@ -172,12 +193,13 @@ We evaluate with AUC-ROC and F1 rather than accuracy. A majority-class baseline 
 ## How to Run
 
 ```bash
-python main.py --models              # train all three
+python main.py --models              # train all (baselines + three learned approaches)
 python main.py --models baseline     # static features, val-set tuning
 python main.py --models tfidf        # static + TF-IDF, val-set tuning
 python main.py --models crossval     # static features, GroupKFold CV
 
 # or directly
+python models/train_baselines.py
 python models/train_baseline.py
 python models/train_tfidf.py
 python models/train_crossval.py

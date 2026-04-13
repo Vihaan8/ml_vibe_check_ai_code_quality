@@ -57,8 +57,9 @@ FEATURE_COLS = [
     "align_missing_libs",
     "align_length_ratio",
     "smell_hardcoded_return_funcs",
+    "smell_placeholder_hits",
     "smell_is_very_short",
-    "meta_parse_error",
+    "smell_relative_length",
 ]
 LABEL = "label"
 
@@ -74,7 +75,7 @@ def report(name, y_true, y_pred, y_prob, fout):
     auc = roc_auc_score(y_true, y_prob)
     f1  = f1_score(y_true, y_pred)
     txt = (
-        f"\n{'='*55}\n  {name}\n{'='*55}\n"
+        f"\n  {name}\n"
         f"  AUC-ROC : {auc:.4f}\n"
         f"  F1      : {f1:.4f}\n\n"
         + classification_report(y_true, y_pred, digits=4)
@@ -226,7 +227,7 @@ def main():
         ("LightGBM",            lgbm_prob, "#0F6E56"),
     ]:
         prec, rec, _ = precision_recall_curve(y_te, prob)
-        ap = float(np.trapz(prec[::-1], rec[::-1]))
+        ap = float((getattr(np, "trapz", None) or np.trapezoid)(prec[::-1], rec[::-1]))
         ax.plot(rec, prec, label=f"{name} (AP={ap:.3f})", color=color, lw=1.8)
     ax.set_xlabel("Recall")
     ax.set_ylabel("Precision")

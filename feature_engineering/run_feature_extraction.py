@@ -22,7 +22,6 @@ import numpy as np
 from feature_extraction import extract_features_batch
 
 
-# ---- 1. Load ----
 
 def load_bigcodebench(csv_path: str, max_rows: int = None) -> pd.DataFrame:
     """
@@ -65,11 +64,17 @@ def load_bigcodebench(csv_path: str, max_rows: int = None) -> pd.DataFrame:
     return df
 
 
-# ---- 2. Extract features ----
 
 def run_extraction(df: pd.DataFrame, out_path: str = "features_bigcodebench.csv") -> pd.DataFrame:
-    print("\nRunning Phase 1 feature extraction ...")
-    feat_df = extract_features_batch(df, code_col="generated_code", prompt_col="prompt")
+    print("\nRunning feature extraction ...")
+    feat_df = extract_features_batch(df, code_col="generated_code", prompt_col="prompt", libs_col="libs")
+
+    # Per-task relative length: LOC / median LOC for the same task
+    if "task_id" in df.columns and "classical_loc" in feat_df.columns:
+        task_ids = df["task_id"].reset_index(drop=True)
+        loc = feat_df["classical_loc"]
+        task_median = loc.groupby(task_ids).transform("median").clip(lower=1)
+        feat_df["smell_relative_length"] = (loc / task_median).round(4)
 
     # Keep metadata columns alongside features
     meta_cols = ["task_id", "model_name", "split", "label", "entry_point", "libs"]
@@ -88,16 +93,13 @@ def run_extraction(df: pd.DataFrame, out_path: str = "features_bigcodebench.csv"
     return out_df
 
 
-# ---- 3. Feature summary ----
 
 def feature_summary(df: pd.DataFrame):
     feat_cols = [c for c in df.columns if any(
         c.startswith(pfx) for pfx in
         ["meta_", "loc_", "classical_", "halstead_", "ast_", "align_", "smell_"]
     )]
-    print(f"\n{'─'*60}")
-    print(f"Feature summary ({len(feat_cols)} features)")
-    print(f"{'─'*60}")
+    print(f"\nFeature summary ({len(feat_cols)} features)")
     grps = {
         "Meta":      [c for c in feat_cols if c.startswith("meta_")],
         "LOC":       [c for c in feat_cols if c.startswith("loc_")],
@@ -116,7 +118,6 @@ def feature_summary(df: pd.DataFrame):
         print(f"  {feat:<45} {val:.4f}")
 
 
-# ---- Main ----
 
 if __name__ == "__main__":
     import argparse

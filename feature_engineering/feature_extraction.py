@@ -1,12 +1,11 @@
 """
 feature_extraction.py
-Phase 1: Feature extraction for Vibe Check
 
-Four main features: 
-    1. Classical software metrics   (LOC, cyclomatic complexity, nesting depth)
-    2 . AST structural features      (control flow, error handling, import node counts)
-    3. Prompt-code alignment        (library coverage, missing libs, length ratio)
-    4. LLM smell features           (hardcoded returns, placeholders, suspiciously short)
+Static feature extraction for Vibe Check. Four feature groups:
+    1. Classical software metrics (LOC, cyclomatic complexity, nesting depth)
+    2. AST structural features (control flow, error handling, import counts)
+    3. Prompt-code alignment (library coverage, missing libs, length ratio)
+    4. LLM smell features (hardcoded returns, placeholders, suspiciously short)
 """
 
 import ast
@@ -121,29 +120,6 @@ def _ast_features(tree: Optional[ast.Module]) -> dict:
 # 3. Prompt-code alignment features
 
 
-# The choice of the libs are using the ones are commonly used in Python coding tasks and 
-# are likely to be mentioned in prompts. 
-_LIB_ALIASES = {
-    "numpy": ["numpy", "np"],
-    "pandas": ["pandas", "pd"],
-    "matplotlib": ["matplotlib", "plt", "mpl"],
-    "sklearn": ["sklearn", "scikit"],
-    "scipy": ["scipy"],
-    "requests": ["requests"],
-    "json": ["json"],
-    "os": ["os"],
-    "sys": ["sys"],
-    "re": ["re"],
-    "datetime": ["datetime"],
-    "pathlib": ["pathlib"],
-    "collections": ["collections"],
-    "itertools": ["itertools"],
-    "math": ["math"],
-    "bisect": ["bisect"]
-}
-
-
-
 def _imported_libs(tree: Optional[ast.Module]) -> set:
     if tree is None:
         return set()
@@ -157,30 +133,33 @@ def _imported_libs(tree: Optional[ast.Module]) -> set:
     return libs
 
 
-def _prompt_libs(prompt: str) -> set:
-    prompt_lower = prompt.lower()
-    return {
-        lib for lib, aliases in _LIB_ALIASES.items()
-        if any(a in prompt_lower for a in aliases)
-    }
+def _parse_libs_field(libs_str: str) -> set:
+    """Parse the libs column from BigCodeBench (e.g. "['pandas', 'requests']")."""
+    if not isinstance(libs_str, str) or not libs_str.strip():
+        return set()
+    try:
+        parsed = ast.literal_eval(libs_str)
+        return set(parsed) if isinstance(parsed, list) else set()
+    except (ValueError, SyntaxError):
+        return set()
 
 
-def _alignment_features(code: str, prompt: str, tree: Optional[ast.Module]) -> dict:
+def _alignment_features(code: str, prompt: str, tree: Optional[ast.Module],
+                         required_libs: set) -> dict:
     """
-    lib_coverage  : fraction of prompt-mentioned libraries actually imported
-    missing_libs  : count of prompt-mentioned libraries NOT imported
-    length_ratio  : len(code) / len(prompt) — low ratio suggests incomplete response
+    lib_coverage  : fraction of required libraries actually imported
+    missing_libs  : count of required libraries NOT imported
+    length_ratio  : len(code) / len(prompt)
     """
-    imported  = _imported_libs(tree)
-    mentioned = _prompt_libs(prompt)
+    imported = _imported_libs(tree)
 
     lib_coverage = (
-        len(imported & mentioned) / len(mentioned) if mentioned else 1.0
+        len(imported & required_libs) / len(required_libs) if required_libs else 1.0
     )
 
     return {
         "align_lib_coverage":   round(lib_coverage, 4),
-        "align_missing_libs":   len(mentioned - imported),
+        "align_missing_libs":   len(required_libs - imported),
         "align_length_ratio":   round(len(code) / max(len(prompt), 1), 4),
     }
 
@@ -188,15 +167,12 @@ def _alignment_features(code: str, prompt: str, tree: Optional[ast.Module]) -> d
 # 4. LLM smell features
 
 def _smell_features(code: str, tree: Optional[ast.Module]) -> dict:
-    """
-    hardcoded_return  : functions whose entire body is return <literal>
-    placeholder_hits  : count of pass / ... / TODO / NotImplementedError
-    is_very_short     : 1 if ≤ 5 non-blank lines (proposal: below 10th percentile)
-    """
-    # Hardcoded return: function body is just `return <constant>`
     hardcoded_returns = 0
+    placeholder_hits = 0
+
     if tree is not None:
         for node in ast.walk(tree):
+            # Hardcoded return: function body is just `return <constant>`
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 real = [n for n in node.body if not isinstance(n, ast.Expr)]
                 if (len(real) == 1
@@ -204,39 +180,47 @@ def _smell_features(code: str, tree: Optional[ast.Module]) -> dict:
                         and isinstance(real[0].value, ast.Constant)):
                     hardcoded_returns += 1
 
-    # Suspiciously short
+            # Placeholder: pass statements
+            if isinstance(node, ast.Pass):
+                placeholder_hits += 1
+
+            # Placeholder: bare Ellipsis (...)
+            if isinstance(node, ast.Expr) and isinstance(getattr(node, "value", None), ast.Constant):
+                if node.value.value is Ellipsis:
+                    placeholder_hits += 1
+
+            # Placeholder: raise NotImplementedError
+            if isinstance(node, ast.Raise) and node.exc is not None:
+                if isinstance(node.exc, ast.Call) and isinstance(node.exc.func, ast.Name):
+                    if node.exc.func.id == "NotImplementedError":
+                        placeholder_hits += 1
+
+    # TODO/FIXME in string literals or comments
+    placeholder_hits += len(re.findall(r'\b(TODO|FIXME|HACK|XXX)\b', code, re.IGNORECASE))
+
     non_blank = [l for l in code.splitlines() if l.strip()]
     is_very_short = int(len(non_blank) <= 5)
 
     return {
         "smell_hardcoded_return_funcs": hardcoded_returns,
+        "smell_placeholder_hits":       placeholder_hits,
         "smell_is_very_short":          is_very_short,
     }
 
 
 # Main extraction functions
 
-def extract_features(code: str, prompt: str = "") -> dict:
-    """
-    Extract all Phase 1 features for a single (code, prompt) pair.
-
-    Parameters
-    ----------
-    code   : AI-generated source code string
-    prompt : instruct prompt / task description (can be empty)
-
-    Returns
-    -------
-    dict of 16 features + 1 meta field (parse error flag)
-    """
+def extract_features(code: str, prompt: str = "", libs: str = "") -> dict:
+    """Extract all features for a single (code, prompt, libs) sample."""
     code   = _ensure_str(code)
     prompt = _ensure_str(prompt)
     tree   = _safe_parse(code)
+    required_libs = _parse_libs_field(libs)
 
     feats = {"meta_parse_error": int(tree is None)}
     feats.update(_classical_features(code, tree))
     feats.update(_ast_features(tree))
-    feats.update(_alignment_features(code, prompt, tree))
+    feats.update(_alignment_features(code, prompt, tree, required_libs))
     feats.update(_smell_features(code, tree))
     return feats
 
@@ -245,28 +229,17 @@ def extract_features_batch(
     df: pd.DataFrame,
     code_col: str = "generated_code",
     prompt_col: str = "prompt",
+    libs_col: str = "libs",
     show_progress: bool = True,
 ) -> pd.DataFrame:
-    """
-    Extract features for every row in a DataFrame.
-
-    Parameters
-    ----------
-    df            : input DataFrame
-    code_col      : column containing source code strings
-    prompt_col    : column containing prompt strings
-    show_progress : print progress every 5000 rows
-
-    Returns
-    -------
-    DataFrame of features with the same index as df
-    """
+    """Extract features for every row in a DataFrame."""
     records = []
     total   = len(df)
     for i, (_, row) in enumerate(df.iterrows()):
         code   = _ensure_str(row.get(code_col, ""))
         prompt = _ensure_str(row.get(prompt_col, ""))
-        records.append(extract_features(code, prompt))
+        libs   = _ensure_str(row.get(libs_col, ""))
+        records.append(extract_features(code, prompt, libs))
         if show_progress and (i + 1) % 5000 == 0:
             print(f"  [{i+1:,}/{total:,}] features extracted ...")
     return pd.DataFrame(records, index=df.index)

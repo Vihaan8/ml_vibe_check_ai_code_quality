@@ -9,3 +9,12 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Model artifacts (regenerate by running the training scripts)
+models/outputs_*/*.pkl
+models/outputs_*/results.csv
+
+# Claude
+.claude/
+CLAUDE.md
+.claude.json

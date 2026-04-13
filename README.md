@@ -4,7 +4,7 @@ Can we predict whether AI-generated code will pass its test suite without runnin
 
 AI coding assistants now generate a large share of new code, but even top LLMs only produce correct code about 60% of the time on practical tasks. Software defect prediction (SDP) is a well-established ML subfield that uses static code features to predict bugs in human-written code. We apply this framework to LLM-generated code: extract static features from the source, train classifiers, and see whether failure patterns in AI code are predictable from the code alone.
 
-We train on 123,000 labeled code samples across 57 LLMs using the BigCodeBench benchmark. The best model (Logistic Regression with TF-IDF features) achieves 0.635 AUC-ROC on a held-out test set, showing that static code properties carry meaningful signal about correctness.
+We train on 123,000 labeled code samples across 57 LLMs using the BigCodeBench benchmark. The best model (Logistic Regression with TF-IDF features) achieves 0.645 AUC-ROC on a held-out test set, beating all simple baselines and showing that static code properties carry meaningful signal about correctness.
 
 
 ## Overall Architecture
@@ -36,9 +36,11 @@ flowchart LR
 │   └── run_feature_extraction.py    # Runs extraction over a full CSV
 ├── models/
 │   ├── README.md                    # Detailed model documentation
+│   ├── train_baselines.py           # Majority class, random, LOC threshold
 │   ├── train_baseline.py            # Static features, val-set tuning
 │   ├── train_tfidf.py              # Static + TF-IDF, val-set tuning
 │   ├── train_crossval.py           # Static features, GroupKFold CV tuning
+│   ├── outputs_baselines/           # Baseline comparison metrics
 │   ├── outputs_baseline/            # Saved models, metrics, plots
 │   ├── outputs_tfidf/
 │   └── outputs_crossval/
@@ -93,20 +95,20 @@ Matching samples to their labels was the main challenge. The code sample files u
 
 ## Feature Engineering
 
-`feature_engineering/feature_extraction.py` extracts 17 static features from each code sample organized into four groups, each targeting a different hypothesis about why AI code fails.
+`feature_engineering/feature_extraction.py` extracts 18 static features from each code sample organized into four groups, each targeting a different hypothesis about why AI code fails.
 
 ```mermaid
 flowchart LR
     Code["Generated\nCode"] --> P["AST Parse\nvia Python ast"]
     Code --> R["Radon Analysis\ncomplexity metrics"]
-    Prompt["Task\nPrompt"] --> AL
+    Libs["Task libs\ncolumn"] --> AL
 
     P --> AST["AST Features\n8 features"]
-    P --> SM["LLM Smell Features\n2 features"]
+    P --> SM["LLM Smell Features\n4 features"]
     R --> CL["Classical Metrics\n3 features"]
     P --> AL["Alignment Features\n3 features"]
 
-    CL --> V["Feature Vector\n17 values per sample"]
+    CL --> V["Feature Vector\n18 values per sample"]
     AST --> V
     AL --> V
     SM --> V
@@ -118,51 +120,64 @@ flowchart LR
 **AST structural features** (8 features) count key node types in the abstract syntax tree:
 - `ast_if_count`, `ast_for_count`, `ast_while_count`, `ast_try_count`, `ast_except_count`, `ast_return_count`, `ast_import_count`, `ast_has_error_handling`
 
-**Prompt-code alignment features** (3 features) check whether the generated code addresses what was asked. These are specific to the LLM setting and have no equivalent in traditional SDP:
-- `align_lib_coverage` (fraction of prompt-mentioned libraries imported), `align_missing_libs` (count of missing libraries), `align_length_ratio` (code length relative to prompt length)
+**Prompt-code alignment features** (3 features) check whether the generated code uses the libraries the task requires. We parse the `libs` column from BigCodeBench (which lists the exact required libraries for each task) and compare against what the code actually imports:
+- `align_lib_coverage` (fraction of required libraries imported), `align_missing_libs` (count of required libraries not imported), `align_length_ratio` (code length relative to prompt length)
 
-**LLM smell features** (2 features) target known failure modes of code generators:
-- `smell_hardcoded_return_funcs` (functions whose body is just `return <literal>`), `smell_is_very_short` (5 or fewer non-blank lines)
+**LLM smell features** (4 features) target known failure modes of code generators:
+- `smell_hardcoded_return_funcs` (functions whose body is just `return <literal>`), `smell_placeholder_hits` (count of `pass`, `...`, `raise NotImplementedError`, and TODO/FIXME comments), `smell_is_very_short` (5 or fewer non-blank lines), `smell_relative_length` (LOC / median LOC for that task, computed per-split to avoid leakage)
 
-Plus one meta feature: `meta_parse_error` (1 if the code has a syntax error and can't be parsed).
-
-The features most correlated with failure are lines of code (-0.17), presence of error handling (-0.12), and cyclomatic complexity (-0.12). The negative correlation means that as solutions grow longer and more complex, they are more likely to fail. This suggests LLMs struggle primarily with task complexity: simple tasks get correct short answers, while harder tasks produce longer but incorrect code.
-
-Prompt-code alignment features show near-zero correlation, indicating that simple heuristic alignment is not enough to capture whether generated code satisfies the prompt.
+A diagnostic field `meta_parse_error` is also extracted (1 if code has a syntax error) but excluded from model training since BigCodeBench's sanitized samples are all parseable.
 
 
 ## Model Training and Evaluation
 
-We frame this as binary classification: does a given code sample pass or fail its test suite? Three modeling approaches were tried, each exploring a different angle.
+We frame this as binary classification: does a given code sample pass or fail its test suite? We first establish baselines, then try three learned modeling approaches.
 
 ```mermaid
 flowchart LR
+    subgraph baselines["Baselines"]
+        BL["Majority class\nRandom\nLOC threshold"] --> BLR["Best AUC\n0.503"]
+    end
+
     subgraph baseline["Baseline"]
-        B1["17 static\nfeatures"] --> B2["LogReg + LightGBM\nval-set tuning"]
-        B2 --> B3["Best AUC\n0.608"]
+        B1["18 static\nfeatures"] --> B2["LogReg + LightGBM\nval-set tuning"]
+        B2 --> B3["Best AUC\n0.629"]
     end
 
     subgraph tfidf["TF-IDF"]
-        T1["17 static +\n20K TF-IDF"] --> T2["LogReg + LightGBM + RF\nval-set tuning"]
-        T2 --> T3["Best AUC\n0.635"]
+        T1["18 static +\n20K TF-IDF"] --> T2["LogReg + LightGBM + RF\nval-set tuning"]
+        T2 --> T3["Best AUC\n0.645"]
     end
 
     subgraph crossval["Cross-Validation"]
-        C1["17 static\nfeatures"] --> C2["LogReg + RF + XGBoost\nGroupKFold CV"]
-        C2 --> C3["Best AUC\n0.608"]
+        C1["18 static\nfeatures"] --> C2["LogReg + RF + XGBoost\nGroupKFold CV"]
+        C2 --> C3["Best AUC\n0.629"]
     end
 ```
 
 See `models/README.md` for full details including hyperparameter grids and per-class metrics.
 
+### Baselines (no learning)
+
+Simple heuristics to confirm that learned models add value beyond trivial rules.
+
+| Baseline | AUC-ROC | F1 | Accuracy |
+|---|---|---|---|
+| Majority class (always predict fail) | 0.500 | 0.000 | 0.588 |
+| Random stratified | 0.503 | 0.405 | 0.514 |
+| Code length > task median | 0.385 | 0.362 | 0.425 |
+| LOC threshold (>8 lines) | 0.385 | 0.526 | 0.384 |
+
+All learned models beat every baseline on AUC, confirming the features carry real signal.
+
 ### Baseline: static features, validation-set tuning
 
-Logistic Regression and LightGBM trained on the 17 hand-crafted features, tuning hyperparameters by evaluating on the validation set.
+Logistic Regression and LightGBM trained on the 18 static features, tuning hyperparameters by evaluating on the validation set.
 
 | Model | AUC-ROC | F1 | Accuracy |
 |---|---|---|---|
-| Logistic Regression | 0.604 | 0.538 | 0.561 |
-| LightGBM | 0.608 | 0.516 | 0.582 |
+| Logistic Regression | 0.616 | 0.546 | 0.572 |
+| LightGBM | 0.629 | 0.544 | 0.593 |
 
 ### TF-IDF: static + code text features, validation-set tuning
 
@@ -170,29 +185,31 @@ Adds 20,000 TF-IDF features (10K word n-grams + 10K character n-grams) extracted
 
 | Model | Features | AUC-ROC | F1 | Accuracy |
 |---|---|---|---|---|
-| Logistic Regression | Static + TF-IDF (20,017) | 0.635 | 0.537 | 0.592 |
-| LightGBM | Static + TF-IDF (20,017) | 0.634 | 0.529 | 0.611 |
-| Random Forest | Static only (17) | 0.605 | 0.537 | 0.581 |
+| Logistic Regression | Static + TF-IDF (20,018) | 0.645 | 0.549 | 0.602 |
+| LightGBM | Static + TF-IDF (20,018) | 0.636 | 0.539 | 0.612 |
+| Random Forest | Static only (18) | 0.620 | 0.546 | 0.592 |
 
 ### Cross-validation: static features, StratifiedGroupKFold tuning
 
-Logistic Regression, Random Forest, and XGBoost trained on the 17 static features, with hyperparameters tuned via 5-fold StratifiedGroupKFold cross-validation (grouped by task_id). The final Logistic Regression model is retrained on train+val before test evaluation.
+Logistic Regression, Random Forest, and XGBoost trained on the 18 static features, with hyperparameters tuned via 5-fold StratifiedGroupKFold cross-validation (grouped by task_id). The final Logistic Regression model is retrained on train+val before test evaluation.
 
 | Model | AUC-ROC | F1 | Accuracy |
 |---|---|---|---|
-| Logistic Regression | 0.608 | 0.536 | 0.561 |
-| XGBoost | 0.640 | 0.329 | 0.581 |
-| Random Forest | 0.584 | 0.433 | 0.571 |
+| Logistic Regression | 0.622 | 0.543 | 0.573 |
+| XGBoost | 0.629 | 0.356 | 0.619 |
+| Random Forest | 0.576 | 0.408 | 0.585 |
 
 ### Key findings
 
-Adding TF-IDF improved AUC by about 0.03 for Logistic Regression and LightGBM. The TF-IDF features capture patterns the static features miss: specific function names, import patterns, and syntax constructs that correlate with pass/fail.
+All learned models beat every baseline on AUC (0.58-0.65 vs 0.50), confirming that the engineered features carry real predictive signal beyond trivial heuristics.
 
-Cross-validation tuning confirmed that Logistic Regression is the most stable model. It shows nearly identical train and validation AUC (0.638 vs 0.637), while Random Forest and XGBoost both overfit significantly (RF: 0.976 train vs 0.584 val). XGBoost achieved the highest raw AUC (0.640) but with an F1 of only 0.329 due to very low recall, making it impractical without threshold tuning.
+Adding TF-IDF improved AUC by about 0.03 for Logistic Regression (0.616 to 0.645). The TF-IDF features capture patterns the static features miss: specific function names, import patterns, and syntax constructs that correlate with pass/fail.
 
-Overall, Logistic Regression was selected as the recommended model because it delivers the best balance of AUC, F1, and generalization stability across all three approaches. The AUC ceiling around 0.635 suggests that purely static features have limited but real predictive power for this task.
+Cross-validation tuning confirmed that Logistic Regression is the most stable model, while XGBoost achieved comparable AUC (0.629) but with collapsed F1 (0.356) due to very low recall, making it impractical without threshold tuning. Random Forest overfits severely.
 
-All models handle the 41/59 class imbalance through class weighting (balanced class weights for LogReg and RF, scale_pos_weight for LightGBM). We report AUC-ROC and F1 rather than accuracy, since accuracy is misleading on imbalanced datasets.
+Overall, Logistic Regression with TF-IDF was the best model (0.645 AUC, 0.549 F1). The AUC ceiling around 0.645 suggests that static features have limited but real predictive power for this task.
+
+All models handle the 41/59 class imbalance through class weighting. We report AUC-ROC and F1 rather than accuracy, since accuracy is misleading on imbalanced datasets (a majority-class baseline gets 58.8% accuracy but 0.0 F1).
 
 
 ## How to Run
@@ -210,9 +227,10 @@ python main.py --all                       # full pipeline from scratch
 python main.py                             # train all models (default, assumes data exists)
 python main.py --preprocess                # download data and split
 python main.py --features                  # extract features from splits
-python main.py --models baseline           # static features, val-set tuning
-python main.py --models tfidf              # static + TF-IDF, val-set tuning
-python main.py --models crossval           # static features, GroupKFold CV
+python main.py --models baselines           # majority class, random, LOC threshold
+python main.py --models baseline            # static features, val-set tuning
+python main.py --models tfidf               # static + TF-IDF, val-set tuning
+python main.py --models crossval            # static features, GroupKFold CV
 ```
 
 Or run each script directly:
@@ -221,6 +239,7 @@ Or run each script directly:
 python data/preprocessing/collect_data.py
 python data/preprocessing/split_data.py --input data/clean/samples.csv --outdir data/clean/splits
 python feature_engineering/run_feature_extraction.py --input data/clean/splits/train.csv --out data/clean/splits/train_features.csv
+python models/train_baselines.py
 python models/train_baseline.py
 python models/train_tfidf.py
 python models/train_crossval.py
