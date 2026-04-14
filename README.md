@@ -25,7 +25,7 @@ flowchart LR
 ```
 .
 ├── main.py                          # Pipeline orchestrator
-├── requirements.txt                 # Dependencies 
+├── requirements.txt                 # Dependencies
 ├── data/
 │   ├── raw/                         # Downloaded data (gitignored)
 │   ├── clean/                       # Processed CSVs and splits (gitignored)
@@ -39,12 +39,13 @@ flowchart LR
 │   ├── README.md                    # Detailed model documentation
 │   ├── train_baselines.py           # Majority class, random, LOC threshold
 │   ├── train_baseline.py            # Static features, val-set tuning
-│   ├── train_tfidf.py              # Static + TF-IDF, val-set tuning
-│   ├── train_crossval.py           # Static features, GroupKFold CV tuning
+│   ├── train_tfidf.py               # Static + TF-IDF, val-set tuning
+│   ├── train_crossval.py            # Static features, GroupKFold CV tuning
+│   ├── tune_threshold.py            # Decision threshold tuning for crossval models
 │   ├── outputs_baselines/           # Baseline comparison metrics
 │   ├── outputs_baseline/            # Saved models, metrics, plots
-│   ├── outputs_tfidf/
-│   └── outputs_crossval/
+│   ├── outputs_tfidf/               # Saved models, metrics, plots
+│   └── outputs_crossval/            # Saved models, metrics, plots, tuned results
 └── archive/                         # Exploratory notebooks and deprecated files
 ```
 
@@ -153,6 +154,7 @@ flowchart LR
     subgraph crossval["Cross-Validation"]
         C1["18 static\nfeatures"] --> C2["LogReg + RF + XGBoost\nGroupKFold CV"]
         C2 --> C3["Best AUC\n0.629"]
+        C3 --> C4["Threshold tuning\n-> Best F1 0.587"]
     end
 ```
 
@@ -167,7 +169,7 @@ Simple heuristics to confirm that learned models add value beyond trivial rules.
 | Majority class (always predict fail) | 0.500 | 0.000 | 0.588 |
 | Random stratified | 0.503 | 0.405 | 0.514 |
 | Code length > task median | 0.385 | 0.362 | 0.425 |
-| LOC threshold (>8 lines) | 0.385 | 0.526 | 0.384 |
+| LOC threshold (>8 lines) | 0.385| 0.526 | 0.384 |
 
 All learned models beat every baseline on AUC, confirming the features carry real signal.
 
@@ -200,15 +202,27 @@ Logistic Regression, Random Forest, and XGBoost trained on the 18 static feature
 | XGBoost | 0.629 | 0.356 | 0.619 |
 | Random Forest | 0.576 | 0.408 | 0.585 |
 
+### Threshold tuning: optimizing the decision boundary
+
+The default classification threshold of 0.5 produced collapsed F1 for XGBoost (0.356) despite good AUC (0.629). `models/tune_threshold.py` sweeps thresholds from 0.10 to 0.90 on the validation set, selects the one that maximizes F1, then re-evaluates on the test set.
+
+| Model | Default threshold | Default F1 | Tuned threshold | Tuned F1 | Gain |
+|---|---|---|---|---|---|
+| Logistic Regression | 0.50 | 0.543 | 0.36 | 0.587 | +0.044 |
+| XGBoost | 0.50 | 0.356 | 0.29 | 0.585 | +0.229 |
+| Random Forest | 0.50 | 0.408 | 0.15 | 0.585 | +0.177 |
+
+Threshold tuning rescued XGBoost from appearing broken to matching the best F1 across all models. AUC is unchanged since it measures ranking quality across all thresholds — the model was always good, it was simply miscalibrated at the default cutoff.
+
 ### Key findings
 
-All learned models beat every baseline on AUC (0.58-0.65 vs 0.50), confirming that the engineered features carry real predictive signal beyond trivial heuristics.
+All learned models beat every baseline on AUC (0.58–0.65 vs 0.50), confirming that the engineered features carry real predictive signal beyond trivial heuristics.
 
 Adding TF-IDF improved AUC by about 0.03 for Logistic Regression (0.616 to 0.645). The TF-IDF features capture patterns the static features miss: specific function names, import patterns, and syntax constructs that correlate with pass/fail.
 
-Cross-validation tuning confirmed that Logistic Regression is the most stable model, while XGBoost achieved comparable AUC (0.629) but with collapsed F1 (0.356) due to very low recall, making it impractical without threshold tuning. Random Forest overfits severely.
+Cross-validation tuning confirmed that Logistic Regression is the most stable model. XGBoost achieved comparable AUC (0.629) but with collapsed F1 (0.356) at the default threshold — threshold tuning recovered its F1 to 0.585 (+0.229), matching the best F1 across all models.
 
-Overall, Logistic Regression with TF-IDF was the best model (0.645 AUC, 0.549 F1). The AUC ceiling around 0.645 suggests that static features have limited but real predictive power for this task.
+Overall, Logistic Regression with TF-IDF was the best model on AUC (0.645), while threshold-tuned XGBoost achieved the best F1 among crossval models (0.585). The AUC ceiling around 0.645 suggests that static features have limited but real predictive power for this task.
 
 All models handle the 41/59 class imbalance through class weighting. We report AUC-ROC and F1 rather than accuracy, since accuracy is misleading on imbalanced datasets (a majority-class baseline gets 58.8% accuracy but 0.0 F1).
 
@@ -224,14 +238,16 @@ python -m pip install -r requirements.txt
 The `main.py` script orchestrates the pipeline:
 
 ```bash
-python main.py --all                       # full pipeline from scratch
-python main.py                             # train all models (default, assumes data exists)
-python main.py --preprocess                # download data and split
-python main.py --features                  # extract features from splits
-python main.py --models baselines           # majority class, random, LOC threshold
-python main.py --models baseline            # static features, val-set tuning
-python main.py --models tfidf               # static + TF-IDF, val-set tuning
-python main.py --models crossval            # static features, GroupKFold CV
+python main.py --all                           # full pipeline from scratch
+python main.py                                 # train all models (assumes data exists)
+python main.py --preprocess                    # download data and split
+python main.py --features                      # extract features from splits
+python main.py --models baselines              # majority class, random, LOC threshold
+python main.py --models baseline               # static features, val-set tuning
+python main.py --models tfidf                  # static + TF-IDF, val-set tuning
+python main.py --models crossval               # static features, GroupKFold CV
+python main.py --models threshold              # tune thresholds on crossval models
+python main.py --models crossval threshold     # train crossval then tune thresholds
 ```
 
 Or run each script directly:
@@ -244,6 +260,7 @@ python models/train_baselines.py
 python models/train_baseline.py
 python models/train_tfidf.py
 python models/train_crossval.py
+python models/tune_threshold.py
 ```
 
 
