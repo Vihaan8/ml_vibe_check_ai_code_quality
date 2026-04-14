@@ -1,3 +1,7 @@
+"""
+split_data.py
+"""
+
 import argparse
 from pathlib import Path
 
