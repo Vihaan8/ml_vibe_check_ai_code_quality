@@ -25,6 +25,7 @@ flowchart LR
 ```
 .
 ├── main.py                          # Pipeline orchestrator
+├── requirements.txt                 # Dependencies 
 ├── data/
 │   ├── raw/                         # Downloaded data (gitignored)
 │   ├── clean/                       # Processed CSVs and splits (gitignored)
@@ -217,7 +218,7 @@ All models handle the 41/59 class imbalance through class weighting. We report A
 Install dependencies:
 
 ```bash
-pip install pandas numpy radon scikit-learn lightgbm xgboost shap matplotlib scipy datasets requests tqdm
+pip install -r requirements.txt
 ```
 
 The `main.py` script orchestrates the pipeline:
