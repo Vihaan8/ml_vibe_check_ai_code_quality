@@ -218,7 +218,7 @@ All models handle the 41/59 class imbalance through class weighting. We report A
 Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 The `main.py` script orchestrates the pipeline:
