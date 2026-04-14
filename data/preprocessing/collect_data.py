@@ -1,4 +1,6 @@
 """
+collect_data.py
+
 Downloads BigCodeBench task descriptions, LLM-generated code samples, and
 pass/fail eval results, then merges them into a CSV in data/clean/.
 
