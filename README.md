@@ -78,9 +78,9 @@ python models/tune_threshold.py
 
 ```mermaid
 flowchart LR
-    A["BigCodeBench\n1,140 tasks, 57 LLMs"] --> B["Preprocessing\nmerge + split"]
+    A["BigCodeBench\n123K samples, 57 LLMs"] --> B["Preprocessing\nmerge + split by task_id"]
     B --> C["Feature Extraction\n18 static features"]
-    C --> D["Model Training\nLogReg, LightGBM,\nXGBoost, RF"]
+    C --> D["Model Training\nLogReg, LightGBM, XGBoost"]
     D --> E["Threshold Tuning\non validation set"]
     E --> F["Test Evaluation\nheld-out, seen once"]
 ```
@@ -233,49 +233,37 @@ All learned models beat every baseline on AUC.
 | Baseline (18 static) | Logistic Regression | 0.616 | 0.546 | 0.572 |
 | Baseline (18 static) | LightGBM | 0.629 | 0.544 | 0.593 |
 | TF-IDF (18 static + 20K text) | Logistic Regression | **0.645** | 0.549 | 0.602 |
+| TF-IDF (18 static + 20K text) | LightGBM | 0.636 | 0.539 | 0.612 |
 | Crossval (18 static) | Logistic Regression | 0.622 | 0.543 | 0.573 |
 | Crossval (18 static) | XGBoost | 0.629 | 0.356 | 0.619 |
 
 ### With threshold tuning (selected on validation, evaluated on test)
+
+Threshold tuning had a bigger impact on F1 than switching between model architectures. The default 0.5 threshold is a poor fit for our 41/59 class split — tuning on the validation set recovered substantial F1 for every model.
 
 | Model | Threshold | AUC-ROC | F1 | Accuracy |
 |---|---|---|---|---|
 | **LogReg + TF-IDF** | **0.39** | **0.645** | **0.592** | 0.529 |
 | XGBoost (crossval) | 0.29 | 0.629 | 0.585 | 0.497 |
 | LogReg (crossval) | 0.36 | 0.622 | 0.587 | 0.484 |
+| LightGBM + TF-IDF | 0.38 | 0.636 | 0.580 | 0.533 |
 
-### Summary of best results
-
-```mermaid
-flowchart LR
-    subgraph Baselines
-        BL["Majority class\nAUC 0.500, F1 0.000"]
-    end
-    subgraph Default["Default Threshold"]
-        D1["LogReg + TF-IDF\nAUC 0.645, F1 0.549"]
-    end
-    subgraph Tuned["Threshold Tuned"]
-        T1["LogReg + TF-IDF\nAUC 0.645, F1 0.592"]
-    end
-    Baselines -->|"+0.145 AUC"| Default -->|"+0.043 F1"| Tuned
-```
-
-### Why accuracy drops with threshold tuning
-
-Lowering the threshold from 0.5 to 0.39 means the model predicts "pass" more aggressively. This catches more true passes (higher recall, higher F1) but also produces more false positives, which drops raw accuracy from 0.602 to 0.529. This is an intentional tradeoff. In practice, flagging potential failures for review is more useful than maximizing the percentage of correct predictions. F1 balances precision and recall and is a better metric than accuracy for this imbalanced dataset (41/59 class split). A majority-class baseline gets 58.8% accuracy but 0.0 F1.
+Lowering the threshold means the model predicts "pass" more aggressively. This catches more true passes (higher recall, higher F1) but produces more false positives, dropping raw accuracy. This is intentional — for a triage tool, it's better to flag more code for review than to miss real failures. F1 balances precision and recall and is a better metric than accuracy for this imbalanced dataset. A majority-class baseline gets 58.8% accuracy but 0.0 F1.
 
 ### Why the AUC ceiling is around 0.65
 
+The strongest signal in the data is task difficulty, not code quality. Passing and failing AI-generated code are structurally near-identical — differing by about 96 characters and 1.6 lines on average. Two solutions can have the same imports, the same control flow, the same complexity, and differ only in a single method call (`.mean()` vs `.sum()`), and no static feature can see that.
+
 | Finding | Detail |
 |---|---|
-| Passing vs failing code differ by | ~96 characters, ~1.6 lines on average |
+| Average difference between passing and failing code | ~96 characters, ~1.6 lines |
 | Tasks where all 57 models fail | 153 (13.4% of tasks) |
 | Tasks where prediction matters (10-90% pass rate) | 719 (63.1% of tasks) |
-| Task overlap between top-5 and bottom-5 models | 77.3% of failure tasks are shared |
+| Failure overlap between top-5 and bottom-5 models | 77.3% of the same tasks |
 | Hardest library domain (socket) | 13.9% pass rate |
 | Easiest library domain (functools) | 77.9% pass rate |
 
-The strongest signal is task difficulty, not code quality. Strong and weak models fail on 77% of the same tasks, and passing vs failing code is structurally almost identical. Static features capture "how hard is this task" more than "is this specific code correct." Two code samples can have the same complexity, imports, and structure but differ by a single method call, and no static feature can see that difference. This is fundamentally different from human-written code, where complexity and code churn are stronger bug predictors. In classical SDP, static features achieve 0.70-0.80 AUC on human code. Our 0.645 on AI code reflects this harder problem.
+Strong and weak models fail on 77% of the same tasks. Our features end up predicting "how hard is this task" more than "is this specific code correct." In classical SDP on human-written code, static features achieve 0.70-0.80 AUC — complexity and code churn are much stronger bug predictors there. Our 0.645 on AI code reflects a fundamentally harder problem where failures are semantic, not structural.
 
 
 ## Team
