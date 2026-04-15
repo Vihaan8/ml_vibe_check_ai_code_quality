@@ -233,8 +233,6 @@ All learned models beat every baseline on AUC.
 | Baseline (18 static) | Logistic Regression | 0.616 | 0.546 | 0.572 |
 | Baseline (18 static) | LightGBM | 0.629 | 0.544 | 0.593 |
 | TF-IDF (18 static + 20K text) | Logistic Regression | **0.645** | 0.549 | 0.602 |
-| TF-IDF (18 static + 20K text) | LightGBM | 0.636 | 0.539 | 0.612 |
-| TF-IDF (18 static only) | Random Forest | 0.620 | 0.546 | 0.592 |
 | Crossval (18 static) | Logistic Regression | 0.622 | 0.543 | 0.573 |
 | Crossval (18 static) | XGBoost | 0.629 | 0.356 | 0.619 |
 
