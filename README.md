@@ -244,9 +244,11 @@ Threshold tuning had a bigger impact on F1 than switching between model architec
 | Model | Threshold | AUC-ROC | F1 | Accuracy |
 |---|---|---|---|---|
 | **LogReg + TF-IDF** | **0.39** | **0.645** | **0.592** | 0.529 |
+| LightGBM + TF-IDF | 0.35 | 0.636 | 0.590 | 0.515 |
+| LightGBM (baseline) | 0.37 | 0.629 | 0.585 | 0.493 |
 | XGBoost (crossval) | 0.29 | 0.629 | 0.585 | 0.497 |
-| LogReg (crossval) | 0.36 | 0.622 | 0.587 | 0.484 |
-| LightGBM + TF-IDF | 0.38 | 0.636 | 0.580 | 0.533 |
+| LogReg (baseline) | 0.36 | 0.616 | 0.589 | 0.484 |
+| LogReg (crossval) | 0.37 | 0.622 | 0.587 | 0.489 |
 
 Lowering the threshold means the model predicts "pass" more aggressively. This catches more true passes (higher recall, higher F1) but produces more false positives, dropping raw accuracy. This is intentional — for a triage tool, it's better to flag more code for review than to miss real failures. F1 balances precision and recall and is a better metric than accuracy for this imbalanced dataset. A majority-class baseline gets 58.8% accuracy but 0.0 F1.
 

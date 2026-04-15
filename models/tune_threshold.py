@@ -12,6 +12,7 @@ Run from the project root:
     python3 models/tune_threshold.py
 
 Output goes into each model's output directory:
+    outputs_baseline/threshold_metrics.txt
     outputs_tfidf/threshold_metrics.txt
     outputs_crossval/threshold_metrics.txt
 """
@@ -149,6 +150,25 @@ def main():
     print("Thresholds optimized on validation set only. Test set used once for evaluation.")
 
     all_results = []
+
+    # Baseline models (static features only)
+    baseline_dir = Path("models/outputs_baseline")
+    baseline_models = {}
+    for name, fname in [("LogReg (baseline)", "logreg_model.pkl"),
+                        ("LightGBM (baseline)", "lgbm_model.pkl")]:
+        pkl = baseline_dir / fname
+        if pkl.exists():
+            with open(pkl, "rb") as f:
+                baseline_models[name] = pickle.load(f)
+
+    if baseline_models:
+        def baseline_probs(model, val_feat, test_feat):
+            X_va = val_feat[FEATURE_COLS].fillna(0)
+            X_te = test_feat[FEATURE_COLS].fillna(0)
+            return model.predict_proba(X_va)[:, 1], model.predict_proba(X_te)[:, 1]
+
+        results = tune_group("Baseline models", baseline_models, baseline_probs, baseline_dir)
+        all_results.extend(results)
 
     # TF-IDF models
     tfidf_dir = Path("models/outputs_tfidf")
