@@ -16,26 +16,25 @@ Xihan "Patrick" Zhu
 
 ## Executive Summary
 
-AI coding assistants are now standard tools on most engineering teams, but they produce code that fails its tests roughly 40–60% of the time on real-world tasks. Right now, the only way to catch these failures is to run the code against a test suite — which takes time, compute, and assumes good tests exist in the first place. We investigated whether it's possible to flag likely-broken AI-generated code just by looking at it, before running anything.
+AI coding assistants are now standard tools on most engineering teams, but they produce code that fails its tests roughly 40 to 60 percent of the time on real-world tasks. Right now, the only way to catch these failures is to run the code against a test suite, which takes time, compute, and assumes good tests exist in the first place. We investigated whether it is possible to flag likely-broken AI-generated code using only static analysis, before running anything.
 
-We trained classifiers on 123,000 labeled code samples from 57 different LLMs using the BigCodeBench benchmark. Our best model, a logistic regression trained on code metrics and text features, catches failures better than chance (0.645 AUC-ROC, 0.592 F1) but is far from a replacement for testing. The core finding is that AI code fails for reasons that are mostly invisible to static analysis — passing and failing code look almost identical structurally, differing by about 96 characters on average. The real signal is task difficulty, not code quality: hard tasks trip up strong and weak models alike.
+We trained classifiers on 123,000 labeled code samples from 57 different LLMs using the BigCodeBench benchmark. Our best model, a logistic regression trained on code metrics and text features, catches failures better than chance (0.645 AUC-ROC, 0.592 F1) but is far from a replacement for testing. The core finding is that AI code fails for reasons that are mostly invisible to static analysis. Passing and failing code look almost identical structurally, differing by about 96 characters on average. The real signal is task difficulty, not code quality: hard tasks trip up strong and weak models alike.
 
 **Decisions to be made:**
 
 - **Should we deploy this as a triage filter?** The model is good enough to prioritize which AI outputs get reviewed first, but not good enough to skip testing. We recommend using it to rank outputs by risk, not to approve or reject them.
-- **Where should we focus testing resources?** AI-generated code that touches system-level libraries (subprocess, socket) fails at 2–3x the rate of code using standard utilities. Testing effort should be weighted accordingly.
-- **Is it worth investing in better static predictors?** Probably not. Our analysis shows static features have hit their ceiling on this problem. Meaningful improvement would require semantic code understanding (e.g., code embeddings), which is a different kind of investment entirely.
+- **Is it worth investing in better static predictors?** Probably not. Our analysis shows static features have hit their ceiling on this problem. Passing and failing code are structurally near-identical. Meaningful improvement would require semantic code understanding, such as code embeddings from pretrained models like CodeBERT, which is a different kind of investment entirely.
 
 
 ## Report
 
 ### Problem
 
-AI coding assistants have become a default part of the development workflow. But on BigCodeBench — a benchmark of 1,140 practical Python programming tasks — even the best-performing model (DeepSeek Coder V2) only passes 54% of the time. The average across all 57 models is 41%. The worst sits at around 15%.
+AI coding assistants have become a default part of the development workflow. To assess their reliability, we used BigCodeBench, a benchmark comprising 1,140 practical Python programming tasks. A task is a natural language prompt that asks the model to write a function, for example "write a function that reads a CSV file, filters rows where the price column exceeds a threshold, and returns the result as a pandas DataFrame." In BigCodeBench, each task is given to 57 different LLMs, and each generated solution is executed against a test suite and labeled as either pass or fail. Even the best-performing model in this benchmark (DeepSeek Coder V2) only passes 54% of the time. The average across all 57 models is 41%. The worst sits at around 15%.
 
-These aren't toy problems. The tasks involve composing real library calls across pandas, requests, subprocess, and similar packages — the kind of work that shows up every day in production codebases. Figure 1 shows how pass rates spread across the 57 models we studied.
+These tasks are representative of real engineering work. They involve composing library calls across pandas, requests, subprocess, and similar packages, the kind of code that shows up every day in production codebases. Figure 1 shows how pass rates spread across the 57 models we studied.
 
-![Figure 1. Pass rates across 57 LLMs on BigCodeBench tasks. The mean pass rate is 41%. Even the best model fails nearly half the time.](report_figures/fig1_model_pass_rates.png)
+![Figure 1. Pass rates across 57 LLMs on BigCodeBench tasks. The mean pass rate is 41%. Even the best model fails nearly half the time.](report_figures/fig1_pass_rates_by_model.png)
 *Figure 1. Pass rates across 57 LLMs on BigCodeBench. The mean is 41%. Even the best model fails nearly half the time, and the worst fails over 80% of the time.*
 
 The scale of the problem is clear: teams adopting AI coding assistants are accepting outputs that fail more often than they succeed, and the failure rate varies dramatically depending on which model they use.
@@ -44,66 +43,48 @@ The scale of the problem is clear: teams adopting AI coding assistants are accep
 
 Right now, the workflow looks like this: accept an AI-generated output, write or run tests, discover it's broken, iterate. There's no pre-screening step. Every output gets the same treatment regardless of how likely it is to be correct.
 
-For teams generating dozens or hundreds of AI outputs a day, this is expensive. Some teams skip testing entirely for outputs that "look right" — which is how bugs ship. The missing piece is a lightweight signal that says "this one is probably fine" or "this one deserves a closer look" before any tests are written or run.
+For teams generating dozens or hundreds of AI outputs a day, this is expensive. Some teams skip testing entirely for outputs that "look right," which is how bugs ship. The missing piece is a lightweight signal that says "this one is probably fine" or "this one deserves a closer look" before any tests are written or run.
 
 ### Our Approach
 
-We asked a simple question: can you predict whether AI-generated code will fail just by looking at it?
+We asked whether it is possible to predict if AI-generated code will fail using only static properties of the code itself, without executing it.
 
-We extracted 18 static features from each code sample — things like lines of code, cyclomatic complexity, whether the required libraries are actually imported, and patterns we call "LLM smells" (placeholder code, hardcoded returns, suspiciously short functions). We also extracted text patterns from the raw code using TF-IDF. We then trained classifiers on 123,000 labeled samples and tuned decision thresholds on a held-out validation set. The full details of our experimental setup are in the Methods appendix.
+We extracted 18 static features from each code sample, including lines of code, cyclomatic complexity, whether the required libraries are actually imported, and patterns we call "LLM smells" such as placeholder code, hardcoded returns, and suspiciously short functions. We also extracted text patterns from the raw code using TF-IDF. We then trained classifiers on 123,000 labeled samples and tuned decision thresholds on a held-out validation set. The full details of our experimental setup are in the Methods appendix.
 
 ### Results
 
-Figure 2 compares all models we trained against the baselines on AUC-ROC — a metric that measures how well the model separates passing code from failing code, regardless of the decision threshold.
+Figure 2 compares all models we trained against the baselines on AUC-ROC, a metric that measures how well the model separates passing code from failing code regardless of the decision threshold.
 
-![Figure 2. AUC-ROC comparison across baselines and learned models.](report_figures/fig3_model_comparison.png)
+![Figure 2. AUC-ROC comparison across baselines and learned models.](report_figures/fig2_model_comparison.png)
 *Figure 2. AUC-ROC across all models. Gray bars are baselines (no learning). Purple bars are learned models. Green is the best performer. All learned models beat baselines. Logistic Regression with TF-IDF features achieves the highest AUC at 0.645.*
 
-Every learned model outperforms the baselines. The best model — logistic regression trained on 18 static features plus 20,000 TF-IDF text features — hits 0.645 AUC-ROC and 0.592 F1 after threshold tuning. Table 1 has the full numbers.
+Every learned model outperforms the baselines. The best model, logistic regression trained on 18 static features plus 20,000 TF-IDF text features, achieves 0.645 AUC-ROC and 0.592 F1 after threshold tuning. Table 1 has the full numbers.
 
-*Table 1. Model performance on the held-out test set. All learned models shown with threshold-tuned F1 (thresholds selected on validation set).*
+![Table 1. Model performance on the held-out test set. All learned models shown with threshold-tuned F1. Thresholds selected on validation set.](report_figures/table1_model_results.png)
+*Table 1. Model performance on the held-out test set. All learned models shown with threshold-tuned F1 (thresholds selected on validation set). Baselines shown in gray, best model highlighted in green.*
 
-| Model | Features | AUC-ROC | F1 (tuned) | Threshold |
-|---|---|---|---|---|
-| Majority class (always predict fail) | — | 0.500 | 0.000 | — |
-| LOC threshold (baseline) | LOC only | 0.385 | 0.526 | — |
-| Logistic Regression | 18 static | 0.616 | 0.589 | 0.36 |
-| LightGBM | 18 static | 0.629 | 0.585 | 0.37 |
-| XGBoost (cross-validated) | 18 static | 0.629 | 0.585 | 0.29 |
-| LightGBM + TF-IDF | 18 static + 20K TF-IDF | 0.636 | 0.590 | 0.35 |
-| **Logistic Regression + TF-IDF** | **18 static + 20K TF-IDF** | **0.645** | **0.592** | **0.39** |
-
-To put 0.645 AUC in practical terms: if you hand the model a random passing sample and a random failing sample, it'll correctly identify which is which about 65% of the time. That's meaningfully better than a coin flip, but it's not a safety net. For comparison, the same type of static defect prediction on human-written code typically achieves 0.70–0.80 AUC. Our lower number isn't a modeling failure — it reflects a genuinely harder problem, which brings us to the most important finding.
+To put 0.645 AUC in practical terms: given a random passing sample and a random failing sample, the model correctly identifies which is which about 65% of the time. That is meaningfully better than a coin flip, but it is not a safety net. For comparison, the same type of static defect prediction on human-written code typically achieves 0.70 to 0.80 AUC. Our lower number is not a modeling failure. It reflects a genuinely harder problem, which brings us to the most important finding.
 
 ### Why It Works (and Why It Doesn't Work Better)
 
 The features that carry predictive signal are all complexity proxies. Figure 3 shows how each feature correlates with the pass/fail label.
 
-![Figure 3. Feature correlations with the pass/fail label.](report_figures/fig4_feature_importance.png)
+![Figure 3. Feature correlations with the pass/fail label.](report_figures/fig3_feature_importance.png)
 *Figure 3. Correlation of each static feature with the pass/fail label. Every strong signal (red) is negative: more complexity predicts more failure. Prompt-alignment features (green, near zero) carry almost no signal.*
 
-Lines of code, cyclomatic complexity, import counts, nesting depth — they all correlate negatively with passing. Longer, more complex code is more likely to fail. But here's the catch: these features are really measuring how hard the task is, not how good the code is. Harder tasks require longer solutions from every model, and every model fails more on harder tasks.
+Lines of code, cyclomatic complexity, import counts, and nesting depth all correlate negatively with passing. Longer, more complex code is more likely to fail. However, the issue is that these features are really measuring how hard the task is, not how good the code is. Harder tasks require longer solutions from every model, and every model fails more on harder tasks.
 
-This becomes clear when you look at the failure patterns directly. Passing and failing code differ by an average of just 96 characters and 1.6 lines. Two solutions can have the same imports, the same control flow, the same structure, and differ only in a single method call — `.mean()` instead of `.sum()` — and no static feature can see that.
+This becomes clear when looking at the failure patterns directly. Passing and failing code differ by an average of just 96 characters and 1.6 lines. Two solutions can have the same imports, the same control flow, the same structure, and differ only in a single method call, `.mean()` instead of `.sum()`, and no static feature can detect that.
 
 The overlap between models makes the same point from a different angle. The top-5 and bottom-5 performing models fail on 77% of the same tasks. Of the 1,140 tasks in the benchmark, 153 are so hard that all 57 models fail. Our classifier ends up predicting "how hard is this task" more than "is this specific code correct." That's useful for prioritization, but it has a hard ceiling.
 
 ### Recommendations
 
-The most directly actionable finding has nothing to do with our classifier — it's about where AI-generated code fails. Figure 4 shows pass rates broken down by library domain.
+Given these findings, we recommend two things for deploying the classifier:
 
-![Figure 4. Pass rates by library domain.](report_figures/fig5_library_domains.png)
-*Figure 4. Pass rates by library domain (libraries with 500+ samples). Tasks involving subprocess (18%) and csv (19%) fail far more often than tasks involving functools (76%) or pickle (69%).*
+1. **Use the classifier as a triage filter, not a gate.** At 0.645 AUC, the model can rank AI outputs by predicted risk so reviewers focus on the most suspect ones first. It should not be used to approve or reject code outright since it gets things wrong too often for that. The value is in prioritization: teams can direct limited review time toward the outputs the classifier flags as highest risk, rather than treating every output equally.
 
-Tasks involving `subprocess` (18% pass rate), `csv` (19%), and `sqlite3` (21%) are dramatically harder for AI models than tasks using `functools` (76%) or `pickle` (69%). This is a pattern engineering teams can act on immediately, without deploying any model.
-
-Based on our analysis, we recommend three things:
-
-1. **Use the classifier as a triage filter, not a gate.** It can rank AI outputs by predicted risk so reviewers look at the most suspect ones first. But it should never be used to approve code without testing — a 0.645 AUC means it gets things wrong too often for that.
-
-2. **Weight testing effort by library domain.** When AI-generated code touches system-level libraries (subprocess, socket, sqlite3) or web frameworks, it deserves more scrutiny than code working with standard data structures. This heuristic alone is probably more valuable than the classifier for day-to-day decisions.
-
-3. **Don't invest further in static predictors for this problem.** Our feature engineering was extensive — 18 hand-crafted features across four groups, plus 20,000 TF-IDF text features — and the ceiling is 0.645 AUC. Passing and failing code are structurally near-identical. Meaningful improvement would require semantic understanding of what the code actually does (e.g., code embeddings from models like CodeBERT), which is a substantially larger undertaking.
+2. **Invest in semantic code analysis for meaningful improvement.** Static features have reached their ceiling on this problem at 0.645 AUC. Our feature engineering was extensive, covering 18 hand-crafted features across four groups plus 20,000 TF-IDF text features, and further additions are unlikely to move the needle. Passing and failing code are structurally near-identical, so the next step forward would require models that understand what the code actually does, such as code embeddings from pretrained models like CodeBERT.
 
 
 ## Required Appendices
@@ -116,7 +97,7 @@ Software defect prediction (SDP) has studied this kind of problem for human-writ
 
 A persistent challenge in SDP is cross-project generalization. Zou et al. (2025) documented performance drops of 0.05 to 0.15 AUC when transferring models across codebases. Herbold et al. (2022) found in a meta-analysis of 78 studies that no single method consistently dominates in the cross-project setting. This matters for our work because predicting on unseen tasks is structurally similar to cross-project prediction.
 
-All of this prior work targets human-written code. LLM-generated code is a fundamentally different setting. Human bugs tend to concentrate in complex, frequently-changed modules, which is why process metrics like change frequency and developer count are among the strongest SDP predictors (Hassan, 2009; Moser et al., 2008; Kamei et al., 2013). AI-generated code has no edit history, no developers, and no prior versions — these signals are simply unavailable. Recent studies have begun characterizing how LLM code fails: Pendyala and Thakur (2025) found language-specific failure patterns and that LLMs drift from the prompt as code grows longer. Zhong and Wang (2024) found widespread API misuse in LLM outputs. Liu et al. (2023) showed that many LLM solutions passing basic tests fail under rigorous testing. Chen et al. (2021) established that code generation accuracy scales with model size but plateaus below human performance.
+All of this prior work targets human-written code. LLM-generated code is a fundamentally different setting. Human bugs tend to concentrate in complex, frequently-changed modules, which is why process metrics like change frequency and developer count are among the strongest SDP predictors (Hassan, 2009; Moser et al., 2008; Kamei et al., 2013). AI-generated code has no edit history, no developers, and no prior versions, so these signals are simply unavailable. Recent studies have begun characterizing how LLM code fails: Pendyala and Thakur (2025) found language-specific failure patterns and that LLMs drift from the prompt as code grows longer. Zhong and Wang (2024) found widespread API misuse in LLM outputs. Liu et al. (2023) showed that many LLM solutions passing basic tests fail under rigorous testing. Chen et al. (2021) established that code generation accuracy scales with model size but plateaus below human performance.
 
 These studies measure how often LLMs fail. None address whether we can predict *which specific outputs* will fail from the code alone. That is the gap we address.
 
@@ -205,14 +186,20 @@ flowchart LR
 
 - *Classical metrics (3):* lines of code, cyclomatic complexity, max nesting depth. These are the standard SDP features used for decades on human code (Menzies et al., 2007) and serve as our baseline for comparing AI-code patterns against established findings.
 - *AST structure (8):* counts of if/for/while/try/except/return/import nodes, plus an error-handling flag. These capture control flow at a finer granularity than classical metrics.
-- *Prompt-code alignment (3):* fraction of required libraries imported, count of missing libraries, code-to-prompt length ratio. These are LLM-specific — we designed them based on findings that LLMs drift from the prompt as code grows (Pendyala & Thakur, 2025). We parse required libraries from BigCodeBench metadata rather than scanning prompt text.
+- *Prompt-code alignment (3):* fraction of required libraries imported, count of missing libraries, code-to-prompt length ratio. These are LLM-specific. We designed them based on findings that LLMs drift from the prompt as code grows (Pendyala & Thakur, 2025). We parse required libraries from BigCodeBench metadata rather than scanning prompt text.
 - *LLM smells (4):* hardcoded-return functions, placeholder patterns (pass, ellipsis, NotImplementedError, TODO), a very-short flag, and relative length vs. task median. These target known LLM failure modes documented by Zhong and Wang (2024).
 
 **Baselines.** We first establish four non-learned baselines: majority class, random stratified, code-length threshold, and LOC threshold. These confirm that learned models capture real signal.
 
-**Classification models.** We train three approaches. First, logistic regression and LightGBM on the 18 static features with validation-set tuning. We chose logistic regression for interpretability and its strong SDP track record (Khalid et al., 2023), and LightGBM for nonlinear interactions. Second, we extend this with 20,000 TF-IDF features (word and character n-grams) from the raw code, motivated by Abdu et al.'s (2022) finding that structural metrics miss semantic signals. Third, we train logistic regression and XGBoost using 5-fold StratifiedGroupKFold CV grouped by task ID for more rigorous tuning.
+**Classification models.** We train three modeling approaches, each exploring a different angle of the problem.
 
-**Threshold tuning.** The 41/59 class split makes the default 0.5 threshold a poor choice. We sweep thresholds 0.10 to 0.90 on the validation set and pick the one maximizing F1. This step proved critical — it had a bigger impact on F1 than switching model architectures.
+The first approach (baseline) trains logistic regression and LightGBM on the 18 static features alone. We chose logistic regression because it has a strong track record in SDP (Khalid et al., 2023), its coefficients are directly interpretable, and it provides a stable baseline unlikely to overfit. We chose LightGBM because gradient-boosted trees consistently rank among the top performers on tabular classification tasks and can capture nonlinear feature interactions that logistic regression cannot. Logistic regression uses balanced class weights and is tuned over regularization strength C. LightGBM is tuned over the number of estimators, learning rate, and maximum tree depth, with early stopping on the validation set and class imbalance handled via scale_pos_weight.
+
+The second approach (TF-IDF) extends the baseline by adding TF-IDF features extracted from the raw code text. We fit two vectorizers on the training set only: a word-level vectorizer capturing code identifiers and keywords (10,000 features), and a character-level vectorizer capturing syntax patterns (10,000 features). Combined with the 18 static features, this yields 20,018 total features. The motivation comes from Abdu et al. (2022), who argued that traditional software metrics miss important semantic differences between code regions. TF-IDF gives the models access to the actual code tokens rather than just summary statistics, potentially capturing patterns like specific function names or import sequences that correlate with correctness. Logistic regression and LightGBM are trained on this combined representation.
+
+The third approach (cross-validation) trains logistic regression and XGBoost on the 18 static features using 5-fold StratifiedGroupKFold cross-validation grouped by task ID for hyperparameter tuning. We included this approach because it provides a more rigorous estimate of generalization performance than simple validation-set tuning, and because StratifiedGroupKFold maintains both class balance and task separation within each fold. We added XGBoost because it is one of the most widely used classifiers in applied ML and allows us to compare against LightGBM under different boosting implementations. The final logistic regression model is retrained on the combined training and validation sets before test evaluation.
+
+**Threshold tuning.** The 41/59 class split makes the default 0.5 threshold a poor choice. We sweep thresholds 0.10 to 0.90 on the validation set and pick the one maximizing F1. This step proved critical. It had a bigger impact on F1 than switching model architectures.
 
 **Evaluation.** We report AUC-ROC (threshold-independent, primary metric), F1 (balances precision and recall for the imbalanced classes), and accuracy. The test set is used once per model.
 
@@ -221,7 +208,7 @@ flowchart LR
 
 A static defect predictor for AI-generated code carries real risks if deployed carelessly.
 
-The biggest risk is false confidence. If developers treat a "low risk" prediction as a green light to skip testing, they will ship broken code. Our best model sits at 0.645 AUC — it makes substantial errors in both directions. This is especially dangerous because developers already tend to over-trust AI coding assistants. Layering a second AI assessment on top could compound the problem. Any deployment needs to frame predictions as risk estimates, not verdicts, and should never be positioned as a replacement for tests.
+The biggest risk is false confidence. If developers treat a "low risk" prediction as a green light to skip testing, they will ship broken code. Our best model sits at 0.645 AUC, which means it makes substantial errors in both directions. This is especially dangerous because developers already tend to over-trust AI coding assistants. Layering a second AI assessment on top could compound the problem. Any deployment needs to frame predictions as risk estimates, not verdicts, and should never be positioned as a replacement for tests.
 
 The model also performs unevenly across task types. Code involving system libraries fails much more often than code using standard utilities, so the model will systematically flag certain domains more than others. Teams should understand that flagging rates reflect task difficulty as much as code quality.
 
