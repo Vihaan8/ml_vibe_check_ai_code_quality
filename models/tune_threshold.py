@@ -187,8 +187,7 @@ def main():
     crossval_dir = Path("models/outputs_crossval")
     crossval_models = {}
     for name, fname in [("LogReg (crossval)", "logreg_model.pkl"),
-                        ("XGBoost (crossval)", "xgb_model.pkl"),
-                        ("RF (crossval)", "rf_model.pkl")]:
+                        ("XGBoost (crossval)", "xgb_model.pkl")]:
         pkl = crossval_dir / fname
         if pkl.exists():
             with open(pkl, "rb") as f:

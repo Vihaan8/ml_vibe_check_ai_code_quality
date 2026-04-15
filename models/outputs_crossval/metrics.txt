@@ -3,18 +3,18 @@ Logistic Regression retrained on train+val before test evaluation
 
 
   Logistic Regression (train+val)
-  AUC-ROC  : 0.6215
-  F1       : 0.5423
-  Accuracy : 0.5730
+  AUC-ROC  : 0.6217
+  F1       : 0.5425
+  Accuracy : 0.5731
 
               precision    recall  f1-score   support
 
-           0     0.6681    0.5442    0.5998     10885
-           1     0.4855    0.6140    0.5423      7625
+           0     0.6683    0.5443    0.6000     10885
+           1     0.4857    0.6143    0.5425      7625
 
-    accuracy                         0.5730     18510
-   macro avg     0.5768    0.5791    0.5711     18510
-weighted avg     0.5929    0.5730    0.5761     18510
+    accuracy                         0.5731     18510
+   macro avg     0.5770    0.5793    0.5712     18510
+weighted avg     0.5931    0.5731    0.5763     18510
 
 
   XGBoost
@@ -30,19 +30,4 @@ weighted avg     0.5929    0.5730    0.5761     18510
     accuracy                         0.6194     18510
    macro avg     0.6070    0.5649    0.5430     18510
 weighted avg     0.6104    0.6194    0.5759     18510
-
-
-  Random Forest
-  AUC-ROC  : 0.5764
-  F1       : 0.4080
-  Accuracy : 0.5849
-
-              precision    recall  f1-score   support
-
-           0     0.6217    0.7513    0.6804     10885
-           1     0.4945    0.3473    0.4080      7625
-
-    accuracy                         0.5849     18510
-   macro avg     0.5581    0.5493    0.5442     18510
-weighted avg     0.5693    0.5849    0.5682     18510
 

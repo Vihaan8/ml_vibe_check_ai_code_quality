@@ -2,7 +2,7 @@
 train_crossval.py
 
 Defect prediction with static features and StratifiedGroupKFold cross-validation.
-Trains Logistic Regression, Random Forest, and XGBoost on the 17 static features,
+Trains Logistic Regression and XGBoost on the 17 static features,
 using 5-fold CV grouped by task_id for hyperparameter tuning.
 
 The final model (Logistic Regression) is retrained on train+val before test evaluation.
@@ -23,7 +23,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import randint, uniform
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -169,30 +168,10 @@ def tune_xgboost(X_train, y_train, groups_train):
     return search.best_estimator_
 
 
-# Random Forest (default hyperparameters, no CV tuning in original notebook)
-def train_rf(X_train, y_train):
-    print("\nRandom Forest (default config)")
-
-    pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
-        ("model", RandomForestClassifier(
-            n_estimators=400,
-            min_samples_leaf=2,
-            class_weight="balanced_subsample",
-            random_state=42,
-            n_jobs=-1,
-        )),
-    ])
-
-    pipeline.fit(X_train, y_train)
-    return pipeline
-
-
 def plot_pr_curves(probs, y_test):
     colors = {
         "Logistic Regression": "#534AB7",
         "XGBoost":             "#0F6E56",
-        "Random Forest":       "#D85A30",
     }
     fig, ax = plt.subplots(figsize=(6, 5))
     for name, prob in probs.items():
@@ -224,11 +203,10 @@ def main():
     # Tune models using cross-validation on training set
     logreg  = tune_logreg(X_train, y_train, groups_train)
     xgboost = tune_xgboost(X_train, y_train, groups_train)
-    rf      = train_rf(X_train, y_train)
 
     # Validate before final test (informational)
     print("\nValidation-set check")
-    for name, model in [("Logistic Regression", logreg), ("XGBoost", xgboost), ("Random Forest", rf)]:
+    for name, model in [("Logistic Regression", logreg), ("XGBoost", xgboost)]:
         val_prob = model.predict_proba(X_val)[:, 1]
         val_auc = roc_auc_score(y_val, val_prob)
         val_f1 = f1_score(y_val, (val_prob >= 0.5).astype(int))
@@ -263,13 +241,6 @@ def main():
         comparison.append(("XGBoost", auc, f1))
         probs_dict["XGBoost"] = xgb_prob
 
-        # Random Forest (trained on train only)
-        rf_prob = rf.predict_proba(X_test)[:, 1]
-        rf_pred = (rf_prob >= 0.5).astype(int)
-        auc, f1 = report("Random Forest", y_test, rf_pred, rf_prob, fout)
-        comparison.append(("Random Forest", auc, f1))
-        probs_dict["Random Forest"] = rf_prob
-
     print(f"  Saved -> models/outputs_crossval/metrics.txt")
 
     # Save predictions
@@ -278,8 +249,6 @@ def main():
     df_test["logreg_pred"] = lr_pred
     df_test["xgb_prob"]    = xgb_prob
     df_test["xgb_pred"]    = xgb_pred
-    df_test["rf_prob"]     = rf_prob
-    df_test["rf_pred"]     = rf_pred
     df_test.to_csv(OUT / "results.csv", index=False)
     print(f"  Saved -> models/outputs_crossval/results.csv")
 
@@ -287,7 +256,6 @@ def main():
     for fname, obj in [
         ("logreg_model.pkl", logreg),
         ("xgb_model.pkl",    xgboost),
-        ("rf_model.pkl",     rf),
     ]:
         with open(OUT / fname, "wb") as f:
             pickle.dump(obj, f)

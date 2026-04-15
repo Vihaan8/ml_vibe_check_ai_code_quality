@@ -5,7 +5,7 @@ Defect prediction with TF-IDF + static features. Combines raw code text
 (TF-IDF tokens) with the 17 static features from feature extraction to give
 models richer signal than summary statistics alone.
 
-Trains Logistic Regression, LightGBM, and Random Forest.
+Trains Logistic Regression and LightGBM.
 
 Run from the project root:
     python3 models/train_tfidf.py
@@ -23,7 +23,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.sparse import hstack, csr_matrix
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -211,46 +210,10 @@ def train_lgbm(X_tr, y_tr, X_va, y_va):
     return best_model
 
 
-# Random Forest
-
-def train_rf(X_tr, y_tr, X_va, y_va):
-    print("\nRandom Forest")
-    # Random Forest doesn't work well on very high-dimensional sparse TF-IDF
-    # so we use only the 17 static features for this one
-    print("  (uses static features only — RF + sparse TF-IDF is slow)")
-
-    # Extract just the static feature columns (first 17 columns)
-    X_tr_static = X_tr[:, :len(FEATURE_COLS)] if hasattr(X_tr, '__getitem__') else X_tr.toarray()[:, :len(FEATURE_COLS)]
-    X_va_static = X_va[:, :len(FEATURE_COLS)] if hasattr(X_va, '__getitem__') else X_va.toarray()[:, :len(FEATURE_COLS)]
-
-    # Convert sparse to dense for RF
-    if hasattr(X_tr_static, "toarray"):
-        X_tr_static = X_tr_static.toarray()
-    if hasattr(X_va_static, "toarray"):
-        X_va_static = X_va_static.toarray()
-
-    best_auc, best_model = -1, None
-    for n in [200, 500]:
-        for depth in [8, 15, None]:
-            m = RandomForestClassifier(
-                n_estimators=n, max_depth=depth,
-                class_weight="balanced",
-                random_state=42, n_jobs=-1,
-            )
-            m.fit(X_tr_static, y_tr)
-            auc = roc_auc_score(y_va, m.predict_proba(X_va_static)[:, 1])
-            print(f"  n={n} depth={depth}  val AUC={auc:.4f}")
-            if auc > best_auc:
-                best_auc, best_model = auc, m
-    print(f"  Best val AUC={best_auc:.4f}")
-    return best_model
-
-
 def plot_pr_curves(probs: dict, y_test):
     colors = {
         "Logistic Regression": "#534AB7",
         "LightGBM":            "#0F6E56",
-        "Random Forest":       "#D85A30",
     }
     fig, ax = plt.subplots(figsize=(6, 5))
     for name, prob in probs.items():
@@ -337,7 +300,6 @@ def main():
     # Train models
     logreg = train_logreg(X_tr, y_tr, X_va, y_va)
     lgbm   = train_lgbm(X_tr, y_tr, X_va, y_va)
-    rf     = train_rf(X_tr, y_tr, X_va, y_va)
 
     # Test-set evaluation
     print("\nTest-set results")
@@ -359,15 +321,6 @@ def main():
         comparison.append(("LightGBM", auc, f1))
         probs_dict["LightGBM"] = lgbm_prob
 
-        # RF uses static features only
-        X_te_static = X_te_s
-        X_va_static = X_va_s
-        rf_prob  = rf.predict_proba(X_te_static)[:, 1]
-        rf_pred  = rf.predict(X_te_static)
-        auc, f1  = report("Random Forest", y_te, rf_pred, rf_prob, fout)
-        comparison.append(("Random Forest", auc, f1))
-        probs_dict["Random Forest"] = rf_prob
-
         print_comparison(comparison, fout)
 
     # Save predictions
@@ -376,8 +329,6 @@ def main():
     df_test["logreg_pred"] = lr_pred
     df_test["lgbm_prob"]   = lgbm_prob
     df_test["lgbm_pred"]   = lgbm_pred
-    df_test["rf_prob"]     = rf_prob
-    df_test["rf_pred"]     = rf_pred
     df_test.to_csv(OUT / "results.csv", index=False)
     print(f"  Saved -> models/outputs_tfidf/results.csv")
 
@@ -385,7 +336,6 @@ def main():
     for fname, obj in [
         ("logreg_model.pkl",  logreg),
         ("lgbm_model.pkl",    lgbm),
-        ("rf_model.pkl",      rf),
         ("word_tfidf.pkl",    word_tfidf),
         ("char_tfidf.pkl",    char_tfidf),
     ]:

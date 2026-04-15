@@ -15,11 +15,11 @@ flowchart LR
     end
 
     subgraph tfidf["TF-IDF"]
-        T1["18 static + 20K TF-IDF\nval-set tuning"] --> T2["LogReg\nLightGBM\nRandom Forest"]
+        T1["18 static + 20K TF-IDF\nval-set tuning"] --> T2["LogReg\nLightGBM"]
     end
 
     subgraph crossval["Cross-Validation"]
-        C1["18 static features\n5-fold GroupKFold CV"] --> C2["LogReg\nRandom Forest\nXGBoost"]
+        C1["18 static features\n5-fold GroupKFold CV"] --> C2["LogReg\nXGBoost"]
     end
 
     baselines -.->|"do learned\nmodels beat these?"| baseline
@@ -90,15 +90,12 @@ Combined with the 18 static features, this gives 20,017 total features.
 
 **LightGBM**: colsample_bytree lowered to 0.3 (since most features are TF-IDF), n_estimators over {300, 500}, learning_rate over {0.05, 0.1}.
 
-**Random Forest**: Uses only the 18 static features (RF on 20K sparse TF-IDF columns is prohibitively slow). n_estimators over {200, 500}, max_depth over {8, 15, None}.
-
 ### Test set results
 
 | Model | Features | AUC-ROC | F1 | Accuracy | Precision (pass) | Recall (pass) |
 |---|---|---|---|---|---|---|
 | Logistic Regression | Static + TF-IDF | 0.645 | 0.549 | 0.602 | 0.515 | 0.587 |
 | LightGBM | Static + TF-IDF | 0.636 | 0.539 | 0.612 | 0.528 | 0.550 |
-| Random Forest | Static only | 0.620 | 0.546 | 0.592 | 0.504 | 0.596 |
 
 Adding TF-IDF improved AUC by about 0.03 for Logistic Regression (0.616 to 0.645).
 
@@ -108,13 +105,12 @@ Adding TF-IDF improved AUC by about 0.03 for Logistic Regression (0.616 to 0.645
 |---|---|
 | `logreg_model.pkl` | Trained Logistic Regression |
 | `lgbm_model.pkl` | Trained LightGBM |
-| `rf_model.pkl` | Trained Random Forest |
 | `word_tfidf.pkl` | Fitted word-level TF-IDF vectorizer |
 | `char_tfidf.pkl` | Fitted character-level TF-IDF vectorizer |
 | `metrics.txt` | AUC, F1, and full classification reports |
 | `results.csv` | Test set predictions and probabilities per sample |
 | `feature_importance.png` | Top TF-IDF tokens by logistic regression coefficient |
-| `pr_curves.png` | Precision-recall curves for all three models |
+| `pr_curves.png` | Precision-recall curves |
 
 
 ## Cross-Validation: Static Features, StratifiedGroupKFold Tuning
@@ -127,8 +123,6 @@ Uses the same 18 static features as the baseline but with a more rigorous tuning
 
 **XGBoost**: RandomizedSearchCV (20 iterations) over n_estimators, max_depth, learning_rate, subsample, colsample_bytree, min_child_weight, gamma, reg_lambda, reg_alpha. Best CV AUC=0.634.
 
-**Random Forest**: 400 estimators, min_samples_leaf=2, balanced_subsample class weights. Not CV-tuned (default config).
-
 ### Validation results (before test)
 
 | Model | Train AUC | Val AUC | Val F1 | Overfitting |
@@ -136,9 +130,8 @@ Uses the same 18 static features as the baseline but with a more rigorous tuning
 | Logistic Regression | 0.638 | 0.637 | 0.596 | None |
 | XGBoost (default) | 0.794 | 0.609 | 0.396 | Significant |
 | XGBoost (tuned) | 0.664 | 0.640 | 0.329 | Moderate |
-| Random Forest | 0.976 | 0.584 | 0.433 | Severe |
 
-Logistic Regression is the only model with nearly identical train and validation performance. XGBoost's tuning improved AUC but collapsed F1 due to very low recall (0.23). Random Forest massively overfits.
+Logistic Regression is the only model with nearly identical train and validation performance. XGBoost's tuning improved AUC but collapsed F1 due to very low recall (0.23).
 
 ### Test set results
 
@@ -146,7 +139,6 @@ Logistic Regression is the only model with nearly identical train and validation
 |---|---|---|---|---|---|
 | Logistic Regression | 0.622 | 0.543 | 0.573 | 0.486 | 0.614 |
 | XGBoost (tuned) | 0.629 | 0.356 | 0.619 | 0.588 | 0.255 |
-| Random Forest | 0.576 | 0.408 | 0.585 | 0.495 | 0.347 |
 
 Logistic Regression was selected as the final model: best F1, most stable, and most interpretable.
 
@@ -156,7 +148,6 @@ Logistic Regression was selected as the final model: best F1, most stable, and m
 |---|---|
 | `logreg_model.pkl` | Trained Logistic Regression (retrained on train+val) |
 | `xgb_model.pkl` | Trained XGBoost |
-| `rf_model.pkl` | Trained Random Forest |
 | `metrics.txt` | AUC, F1, and full classification reports |
 | `results.csv` | Test set predictions and probabilities per sample |
 | `pr_curves.png` | Precision-recall curves |
@@ -183,7 +174,7 @@ Prompt-code alignment features (`align_lib_coverage`, `align_missing_libs`, `ali
 ## Class Imbalance
 
 The dataset is 41% pass / 59% fail. All models use class weighting:
-- Logistic Regression and Random Forest: `class_weight="balanced"` (or `balanced_subsample`)
+- Logistic Regression: `class_weight="balanced"`
 - LightGBM: `scale_pos_weight` = negative/positive ratio (~1.48)
 - XGBoost: default (no explicit weighting in the crossval approach)
 
@@ -197,12 +188,14 @@ python main.py --models              # train all (baselines + three learned appr
 python main.py --models baseline     # static features, val-set tuning
 python main.py --models tfidf        # static + TF-IDF, val-set tuning
 python main.py --models crossval     # static features, GroupKFold CV
+python main.py --models threshold    # tune decision thresholds on all trained models
 
 # or directly
 python models/train_baselines.py
 python models/train_baseline.py
 python models/train_tfidf.py
 python models/train_crossval.py
+python models/tune_threshold.py
 ```
 
 All scripts expect split CSVs at `data/clean/splits/`. Run `python main.py --preprocess --features` first if they don't exist.

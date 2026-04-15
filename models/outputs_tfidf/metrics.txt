@@ -28,23 +28,8 @@ weighted avg     0.6116    0.6022    0.6050     18510
 weighted avg     0.6145    0.6120    0.6131     18510
 
 
-  Random Forest
-  AUC-ROC : 0.6204
-  F1      : 0.5462
-
-              precision    recall  f1-score   support
-
-           0     0.6756    0.5900    0.6299     10885
-           1     0.5044    0.5957    0.5462      7625
-
-    accuracy                         0.5923     18510
-   macro avg     0.5900    0.5928    0.5881     18510
-weighted avg     0.6051    0.5923    0.5954     18510
-
-
   Model comparison (test set)
   Model                      AUC-ROC      F1
   Logistic Regression         0.6446  0.5485
   LightGBM                    0.6361  0.5386
-  Random Forest               0.6204  0.5462
 

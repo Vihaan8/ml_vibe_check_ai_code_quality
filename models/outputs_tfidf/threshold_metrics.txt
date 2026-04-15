@@ -1,0 +1,33 @@
+TF-IDF models -- threshold tuning
+Thresholds selected on validation set to maximize F1.
+Test set used only for final evaluation.
+
+  LogReg (tfidf) (threshold=0.39)
+  AUC-ROC  : 0.6446
+  F1       : 0.5920
+  Accuracy : 0.5285
+
+              precision    recall  f1-score   support
+
+           0     0.7273    0.3170    0.4416     10885
+           1     0.4599    0.8303    0.5920      7625
+
+    accuracy                         0.5285     18510
+   macro avg     0.5936    0.5737    0.5168     18510
+weighted avg     0.6172    0.5285    0.5035     18510
+
+
+  LightGBM (tfidf) (threshold=0.35)
+  AUC-ROC  : 0.6361
+  F1       : 0.5895
+  Accuracy : 0.5150
+
+              precision    recall  f1-score   support
+
+           0     0.7236    0.2836    0.4075     10885
+           1     0.4525    0.8454    0.5895      7625
+
+    accuracy                         0.5150     18510
+   macro avg     0.5881    0.5645    0.4985     18510
+weighted avg     0.6120    0.5150    0.4825     18510
+
