@@ -1,0 +1,32 @@
+SHAP analysis — deployed LogReg + TF-IDF, test sample of 3000 rows.
+Static features ranked by mean |SHAP|.
+
+                        feature                    label  mean_abs_shap  mean_signed_shap
+                  classical_loc            Lines of code       0.291870         -0.015874
+          smell_relative_length          Relative length       0.132512         -0.008026
+                   ast_if_count       If-statement count       0.112198          0.019066
+classical_cyclomatic_complexity    Cyclomatic complexity       0.108629         -0.028831
+         ast_has_error_handling       Has error handling       0.057557         -0.008052
+               ast_import_count             Import count       0.050363          0.001775
+               ast_return_count             Return count       0.026720          0.005774
+                  ast_for_count           For-loop count       0.017394         -0.005546
+            smell_is_very_short      Very short solution       0.016039          0.003629
+             align_length_ratio Code/prompt length ratio       0.015369         -0.002902
+    classical_max_nesting_depth        Max nesting depth       0.013684         -0.004380
+                  ast_try_count          Try-block count       0.012865         -0.001326
+               ast_except_count     Except-handler count       0.010728          0.001351
+                ast_while_count         While-loop count       0.006818          0.006818
+             align_missing_libs        Missing libraries       0.003324          0.000242
+             align_lib_coverage         Library coverage       0.002936          0.000393
+         smell_placeholder_hits     Placeholder patterns       0.000858         -0.000858
+   smell_hardcoded_return_funcs        Hardcoded returns       0.000035         -0.000035
+
+Top patterns by absolute contribution:
+  Lines of code                 |SHAP|=0.2919  → failure
+  Relative length               |SHAP|=0.1325  → failure
+  If-statement count            |SHAP|=0.1122  → passing
+  Cyclomatic complexity         |SHAP|=0.1086  → failure
+  Has error handling            |SHAP|=0.0576  → failure
+  Import count                  |SHAP|=0.0504  → passing
+  Return count                  |SHAP|=0.0267  → passing
+  For-loop count                |SHAP|=0.0174  → failure

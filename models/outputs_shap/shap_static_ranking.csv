@@ -1,0 +1,19 @@
+feature,label,mean_abs_shap,mean_signed_shap
+classical_loc,Lines of code,0.29186967616131726,-0.015874315473507043
+smell_relative_length,Relative length,0.13251159126063303,-0.00802568754830945
+ast_if_count,If-statement count,0.11219800171185462,0.01906574067565696
+classical_cyclomatic_complexity,Cyclomatic complexity,0.10862945208040685,-0.028830583111744783
+ast_has_error_handling,Has error handling,0.05755724588835193,-0.0080515731658366
+ast_import_count,Import count,0.05036319282548523,0.00177495629816066
+ast_return_count,Return count,0.026720248379197998,0.005773686772514788
+ast_for_count,For-loop count,0.017393737414616684,-0.005546179158440751
+smell_is_very_short,Very short solution,0.016038765570937096,0.0036286799934242874
+align_length_ratio,Code/prompt length ratio,0.015368844473859108,-0.002901520391427163
+classical_max_nesting_depth,Max nesting depth,0.013683936027909153,-0.00437970043141376
+ast_try_count,Try-block count,0.012864576465441367,-0.0013258429821915434
+ast_except_count,Except-handler count,0.01072792660246354,0.0013507949824383993
+ast_while_count,While-loop count,0.006818354048089967,0.006818354048089967
+align_missing_libs,Missing libraries,0.0033240858245292934,0.00024157600468963146
+align_lib_coverage,Library coverage,0.0029362303933084086,0.00039307697008289364
+smell_placeholder_hits,Placeholder patterns,0.0008582710325554684,-0.0008582710325554684
+smell_hardcoded_return_funcs,Hardcoded returns,3.4610838081768246e-05,-3.4610838081768246e-05
