@@ -28,11 +28,15 @@ We train on 123,000 labeled code samples across 57 LLMs using the BigCodeBench b
 │   ├── train_baseline.py            # Static features, val-set tuning
 │   ├── train_tfidf.py               # Static + TF-IDF, val-set tuning
 │   ├── train_crossval.py            # Static features, GroupKFold CV tuning
+│   ├── train_crossmodel.py          # Leave-one-family-out generalization
+│   ├── run_shap.py                  # SHAP feature attribution
 │   ├── tune_threshold.py            # Decision threshold tuning (all models)
 │   ├── outputs_baselines/           # Baseline comparison metrics
 │   ├── outputs_baseline/            # Saved models, metrics, plots
 │   ├── outputs_tfidf/               # Saved models, metrics, plots
-│   └── outputs_crossval/            # Saved models, metrics, plots
+│   ├── outputs_crossval/            # Saved models, metrics, plots
+│   ├── outputs_crossmodel/          # Cross-model generalization results
+│   └── outputs_shap/                # SHAP rankings and plots
 └── archive/                         # Exploratory notebooks and deprecated files
 ```
 
@@ -70,6 +74,8 @@ python models/train_baselines.py
 python models/train_baseline.py
 python models/train_tfidf.py
 python models/train_crossval.py
+python models/train_crossmodel.py
+python models/run_shap.py
 python models/tune_threshold.py
 ```
 
@@ -266,6 +272,35 @@ The strongest signal in the data is task difficulty, not code quality. Passing a
 | Easiest library domain (functools) | 77.9% pass rate |
 
 Strong and weak models fail on 77% of the same tasks. Our features end up predicting "how hard is this task" more than "is this specific code correct." In classical SDP on human-written code, static features achieve 0.70-0.80 AUC — complexity and code churn are much stronger bug predictors there. Our 0.645 on AI code reflects a fundamentally harder problem where failures are semantic, not structural.
+
+### Cross-model generalization
+
+This addresses whether the classifier still works when the engineering team switches LLMs. We retrain the deployed model six times, each time excluding one LLM family from training (GPT, Claude, Llama, DeepSeek, Mistral, Qwen), and evaluate on the held-out family's slice of the test set. The drop from in-distribution performance is the cost of seeing a new family for the first time.
+
+| Family | Models | Test rows | In-distribution AUC | Held-out AUC | Drop |
+|---|---|---|---|---|---|
+| Mistral | 5 | 1,539 | 0.667 | 0.667 | 0.000 |
+| Llama | 10 | 3,762 | 0.656 | 0.651 | 0.006 |
+| DeepSeek | 12 | 3,420 | 0.627 | 0.619 | 0.008 |
+| Claude | 4 | 1,197 | 0.651 | 0.643 | 0.008 |
+| GPT | 4 | 1,410 | 0.619 | 0.607 | 0.011 |
+| Qwen | 6 | 2,052 | 0.655 | 0.638 | 0.016 |
+
+Every family loses less than 0.02 AUC when held out. Mean drop is 0.008. For comparison, classical work on human code documents 0.05 to 0.15 AUC drops when defect models trained on one codebase are applied to another. AI code is more portable across LLM families than human code is across projects: the predictive signal does not depend on which model wrote the code. The classifier can be deployed once and is unlikely to degrade meaningfully as teams swap LLMs.
+
+### What the model relies on
+
+We ran SHAP on the deployed model to rank the 18 static features by their average contribution to predictions on the test set. The 20,000 TF-IDF tokens are excluded from the ranking because the human-code defect prediction literature evaluates importance at the level of software metrics, not individual tokens.
+
+| Feature | Mean abs SHAP | Pushes toward |
+|---|---|---|
+| Lines of code | 0.292 | Failure |
+| Relative length | 0.133 | Failure |
+| If-statement count | 0.112 | Passing |
+| Cyclomatic complexity | 0.109 | Failure |
+| Has error handling | 0.058 | Failure (weak) |
+
+The top contributors are all classical software metrics — the same predictors decades of human-code SDP research have identified as the strongest bug signals. The features we designed specifically for AI failure modes contribute very little: hardcoded returns rank last at 0.00003, placeholder patterns at 0.0009, library coverage and missing libraries near 0.003. AI-generated code fails for the same structural reasons human code does, which reinforces the AUC-ceiling explanation: the classifier learns task difficulty through complexity proxies, regardless of who wrote the code.
 
 
 ## Team
