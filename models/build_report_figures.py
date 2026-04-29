@@ -8,6 +8,8 @@ Produces:
                                                 code cross-project range as context.
   report_figures/fig6_shap_importance.png       Static features by mean |SHAP|,
                                                 colored by direction.
+  report_figures/table1_model_results.png       Table 1 rendered as a PNG with the
+                                                same spelled-out labels as Figure 2.
   report_figures/model_metrics_with_ci.csv      AUC and F1 with 95% bootstrap CIs
                                                 for the Table 1 update.
 
@@ -89,12 +91,12 @@ def load_models():
     t_xgb_cv = read_threshold(ROOT / "models/outputs_crossval/threshold_metrics.txt", "XGBoost (crossval)")
 
     rows = [
-        ("LogReg (static)",     "learned", base["label"].values,  base["logreg_prob"].values, (base["logreg_prob"].values >= t_lr_b).astype(int)),
-        ("LightGBM (static)",   "learned", base["label"].values,  base["lgbm_prob"].values,   (base["lgbm_prob"].values   >= t_lgb_b).astype(int)),
-        ("LogReg (crossval)",   "learned", cv["label"].values,    cv["logistic_regression_prob"].values, (cv["logistic_regression_prob"].values >= t_lr_cv).astype(int)),
-        ("XGBoost (crossval)",  "learned", cv["label"].values,    cv["xgboost_prob"].values,             (cv["xgboost_prob"].values             >= t_xgb_cv).astype(int)),
-        ("LightGBM (TF-IDF)",   "learned", tfidf["label"].values, tfidf["lgbm_prob"].values,  (tfidf["lgbm_prob"].values  >= t_lgb_t).astype(int)),
-        ("LogReg (TF-IDF)",     "best",    tfidf["label"].values, tfidf["logreg_prob"].values, (tfidf["logreg_prob"].values >= t_lr_t).astype(int)),
+        ("Logistic Regression\n(static features)",      "learned", base["label"].values,  base["logreg_prob"].values, (base["logreg_prob"].values >= t_lr_b).astype(int)),
+        ("LightGBM\n(static features)",                 "learned", base["label"].values,  base["lgbm_prob"].values,   (base["lgbm_prob"].values   >= t_lgb_b).astype(int)),
+        ("Logistic Regression\n(cross-validated)",      "learned", cv["label"].values,    cv["logistic_regression_prob"].values, (cv["logistic_regression_prob"].values >= t_lr_cv).astype(int)),
+        ("XGBoost\n(cross-validated)",                  "learned", cv["label"].values,    cv["xgboost_prob"].values,             (cv["xgboost_prob"].values             >= t_xgb_cv).astype(int)),
+        ("LightGBM\n(with text features)",              "learned", tfidf["label"].values, tfidf["lgbm_prob"].values,  (tfidf["lgbm_prob"].values  >= t_lgb_t).astype(int)),
+        ("Logistic Regression\n(with text features)",   "best",    tfidf["label"].values, tfidf["logreg_prob"].values, (tfidf["logreg_prob"].values >= t_lr_t).astype(int)),
     ]
     return rows
 
@@ -104,9 +106,9 @@ def load_models():
 def fig_model_comparison(rows, out_path):
     # baselines from metrics.txt are deterministic — point estimates only
     baseline_rows = [
-        ("Majority class", "baseline", 0.500),
-        ("Random stratified", "baseline", 0.503),
-        ("LOC threshold",  "baseline", 0.385),
+        ("Always predict\nfail",                   "baseline", 0.500),
+        ("Random guess at\nclass proportions",     "baseline", 0.503),
+        ("Lines-of-code\nthreshold",               "baseline", 0.385),
     ]
 
     learned = []
@@ -120,7 +122,7 @@ def fig_model_comparison(rows, out_path):
     his     = [None]*3 + [r[4] for r in learned]
     colors  = [GRAY]*3 + [GREEN if r[1] == "best" else PURPLE for r in learned]
 
-    fig, ax = plt.subplots(figsize=(11, 5.5))
+    fig, ax = plt.subplots(figsize=(13, 6.5))
     x = np.arange(len(labels))
     bars = ax.bar(x, means, color=colors, edgecolor="white", linewidth=0.5)
 
@@ -138,11 +140,12 @@ def fig_model_comparison(rows, out_path):
     ax.text(len(labels) - 0.4, 0.51, "chance", color="#888780", fontsize=8)
 
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=20, ha="right")
+    ax.set_xticklabels(labels, rotation=0, ha="center", fontsize=8)
     ax.set_ylim(0, 0.78)
-    ax.set_ylabel("AUC-ROC")
-    ax.set_title("Ranking quality by model  (95% bootstrap CI on learned models)",
-                 fontweight="normal")
+    ax.set_ylabel("Ranking quality (AUC-ROC, higher is better)")
+    ax.set_title("How well each model ranks AI-generated code by failure risk\n"
+                 "(95% bootstrap confidence interval on the learned models)",
+                 fontweight="normal", fontsize=11)
     ax.grid(True, alpha=0.3, axis="y", linewidth=0.5)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -161,28 +164,41 @@ def fig_model_comparison(rows, out_path):
 
 def fig_crossmodel_drops(out_path):
     df = pd.read_csv(ROOT / "models/outputs_crossmodel/crossmodel_results.csv")
-    df = df.sort_values("auc_drop", ascending=True).reset_index(drop=True)
+    df = df.sort_values("auc_drop", ascending=False).reset_index(drop=True)
+    df["full_pct"] = (df["in_dist_auc"] * 100).round(1)
+    df["loo_pct"]  = (df["ood_auc"]    * 100).round(1)
 
-    fig, ax = plt.subplots(figsize=(9, 4.5))
-    # reference range from Zou et al. (2025) cross-project on human code
-    ax.axvspan(0.05, 0.15, color="#F4D6CC", alpha=0.7, zorder=0)
-    ax.text(0.10, len(df) - 0.4, "Cross-project range on human code\n(Zou et al., 2025)",
-            ha="center", va="top", fontsize=9, color="#7A3318")
+    n = len(df)
+    fig, ax = plt.subplots(figsize=(10, 5.0))
+    bar_h = 0.36
+    y = np.arange(n)
 
-    bars = ax.barh(df["family"], df["auc_drop"], color=GREEN, height=0.6)
-    for i, v in enumerate(df["auc_drop"]):
-        ax.text(v + 0.002, i, f"{v:.3f}", va="center", fontsize=9)
+    ax.barh(y - bar_h/2, df["full_pct"], height=bar_h, color=DARKGRAY,
+            label="Trained with this AI family")
+    ax.barh(y + bar_h/2, df["loo_pct"],  height=bar_h, color=GREEN,
+            label="Trained without this AI family")
 
-    ax.axvline(0, color=DARKGRAY, linewidth=0.8)
-    ax.set_xlim(-0.005, 0.17)
-    ax.set_xlabel("Drop in ranking quality when family is held out of training")
-    ax.set_title("Cross-model generalization: every family loses less than 0.02",
-                 fontweight="normal")
+    for i, row in df.iterrows():
+        ax.text(row["full_pct"] - 0.4, i - bar_h/2, f"{row['full_pct']:.0f}",
+                va="center", ha="right", fontsize=10, color="white", fontweight="bold")
+        ax.text(row["loo_pct"]  - 0.4, i + bar_h/2, f"{row['loo_pct']:.0f}",
+                va="center", ha="right", fontsize=10, color="white", fontweight="bold")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(df["family"], fontsize=11)
+    ax.invert_yaxis()
+    ax.set_xlim(50, 70)
+    ax.set_xlabel("Pairs of (passing, failing) code ranked correctly, out of 100", fontsize=10)
+    ax.set_title("Removing an AI family from training barely changes accuracy",
+                 fontweight="normal", fontsize=12, loc="left")
     ax.grid(True, alpha=0.3, axis="x", linewidth=0.5)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.legend(loc="upper right", frameon=False, fontsize=10,
+              bbox_to_anchor=(1.0, 1.02), ncol=2)
+
     fig.tight_layout()
-    fig.savefig(out_path, dpi=160)
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -197,9 +213,9 @@ def fig_shap_importance(out_path):
         ax.text(v + 0.004, i, f"{v:.3f}", va="center", fontsize=8)
 
     ax.set_xlim(0, df["mean_abs_shap"].max() * 1.15)
-    ax.set_xlabel("Average contribution to a prediction (mean |SHAP|)")
-    ax.set_title("What patterns drive failure predictions",
-                 fontweight="normal")
+    ax.set_xlabel("Average contribution to a prediction (longer bar = pattern matters more)")
+    ax.set_title("Which patterns the model uses most when predicting failure risk",
+                 fontweight="normal", fontsize=11)
     ax.grid(True, alpha=0.3, axis="x", linewidth=0.5)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -211,6 +227,93 @@ def fig_shap_importance(out_path):
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=160)
+    plt.close(fig)
+
+
+# ----- table 1 png ------------------------------------------------------------
+
+def fig_table1(rows, out_path):
+    baselines = [
+        ("Always predict fail",                 "—",                     "0.500", "0.000", "—"),
+        ("Random guess at class proportions",   "—",                     "0.503", "0.413", "—"),
+        ("Lines-of-code threshold",             "Lines of code only",    "0.385", "0.526", "—"),
+    ]
+
+    thresholds = {
+        "Logistic Regression\n(static features)":      "0.36",
+        "LightGBM\n(static features)":                  "0.37",
+        "Logistic Regression\n(cross-validated)":       "0.37",
+        "XGBoost\n(cross-validated)":                   "0.29",
+        "LightGBM\n(with text features)":               "0.35",
+        "Logistic Regression\n(with text features)":    "0.39",
+    }
+    feature_text = {
+        "Logistic Regression\n(static features)":      "18 static",
+        "LightGBM\n(static features)":                  "18 static",
+        "Logistic Regression\n(cross-validated)":       "18 static",
+        "XGBoost\n(cross-validated)":                   "18 static",
+        "LightGBM\n(with text features)":               "18 static + 20K text",
+        "Logistic Regression\n(with text features)":    "18 static + 20K text",
+    }
+
+    learned = []
+    for name, grp, y, p, pred in rows:
+        a, alo, ahi = auc_ci(y, p)
+        f, flo, fhi = f1_ci(y, pred)
+        flat = name.replace("\n", " ")
+        learned.append((
+            flat,
+            feature_text[name],
+            f"{a:.3f} [{alo:.3f}, {ahi:.3f}]",
+            f"{f:.3f} [{flo:.3f}, {fhi:.3f}]",
+            thresholds[name],
+            grp == "best",
+        ))
+
+    headers = ["Model", "Features", "AUC-ROC", "F1 (tuned)", "Threshold"]
+    cells = []
+    row_colors = []
+    for b in baselines:
+        cells.append(list(b))
+        row_colors.append("#F2F1ED")
+    for r in learned:
+        cells.append(list(r[:5]))
+        row_colors.append("#E8F2EC" if r[5] else "white")
+
+    fig, ax = plt.subplots(figsize=(13, 5.0))
+    ax.axis("off")
+    tbl = ax.table(
+        cellText=cells,
+        colLabels=headers,
+        loc="center",
+        cellLoc="center",
+        colWidths=[0.34, 0.20, 0.20, 0.18, 0.10],
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+    tbl.scale(1.0, 1.6)
+
+    n_cols = len(headers)
+    for j in range(n_cols):
+        c = tbl[(0, j)]
+        c.set_facecolor(PURPLE)
+        c.set_text_props(color="white", fontweight="bold")
+        c.set_edgecolor("white")
+
+    for i, color in enumerate(row_colors, start=1):
+        is_best = (i - 1) >= len(baselines) and learned[i - 1 - len(baselines)][5]
+        for j in range(n_cols):
+            c = tbl[(i, j)]
+            c.set_facecolor(color)
+            c.set_edgecolor("#D6D5CF")
+            if is_best:
+                c.set_text_props(fontweight="bold")
+            if j == 0:
+                c.set_text_props(ha="left", fontweight=c.get_text().get_fontweight())
+                c.PAD = 0.04
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -248,6 +351,7 @@ def main():
     fig_model_comparison(rows, OUT_FIG / "fig2_model_comparison_v2.png")
     fig_crossmodel_drops(OUT_FIG / "fig5_crossmodel_drops.png")
     fig_shap_importance(OUT_FIG / "fig6_shap_importance.png")
+    fig_table1(rows, OUT_FIG / "table1_model_results.png")
     print("written:", OUT_FIG)
 
 

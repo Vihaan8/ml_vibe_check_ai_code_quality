@@ -302,6 +302,43 @@ We ran SHAP on the deployed model to rank the 18 static features by their averag
 
 The top contributors are all classical software metrics — the same predictors decades of human-code SDP research have identified as the strongest bug signals. The features we designed specifically for AI failure modes contribute very little: hardcoded returns rank last at 0.00003, placeholder patterns at 0.0009, library coverage and missing libraries near 0.003. AI-generated code fails for the same structural reasons human code does, which reinforces the AUC-ceiling explanation: the classifier learns task difficulty through complexity proxies, regardless of who wrote the code.
 
+The same list works as a manual review checklist for teams that don't deploy the model: function length, branching depth, error handling, and length relative to other solutions for the same task.
+
+
+## Using the Score
+
+The model outputs a number between 0 and 1 for each AI-generated code sample. It is a ranking signal, not a calibrated probability — useful for sorting outputs by failure risk, less useful as a literal "P(fails) = 0.42" estimate.
+
+### Threshold
+
+The shipped threshold is **0.39**, picked on the validation set to maximize F1.
+
+| | Value |
+|---|---|
+| Precision (flagged outputs that actually fail) | 0.46 |
+| Recall (failures we catch) | 0.83 |
+| Base failure rate in the test set | ~0.59 |
+
+The flagged group fails at roughly 2x the base rate, and 83% of all failures land in it. Lowering the threshold flags more outputs (catches more failures, more false positives); raising it does the opposite. The right cutoff depends on your pipeline — log scores and outcomes for a week of normal use, plot review/test-writing load against catch rate at several candidate cutoffs, and pick the one that fits your capacity. `models/tune_threshold.py` reproduces the F1 sweep.
+
+### Three ways to use it
+
+| Use | What it looks like | When it fits |
+|---|---|---|
+| **Test-writing prioritization** *(primary)* | Write full test coverage for high-risk outputs first; lighter checks (lint, type-check, smoke tests) on the rest | Test-writing capacity is the bottleneck |
+| Reviewer routing | High-risk outputs go to senior reviewers; low-risk to junior reviewers or automated checks | Reviewer expertise is the bottleneck |
+| Automated retry | Outputs above a chosen cutoff are sent back to the AI assistant before reaching a human | You're willing to A/B-test that retries actually improve quality |
+
+We characterized the score itself, not these workflows. Automated retry assumes the AI produces a meaningfully better second answer — verify that on your own data before committing to it.
+
+### What it catches, what it misses
+
+Catches: long, deeply nested code; missing error handling; suspiciously short outputs; high cyclomatic complexity. The structural patterns classical defect prediction has used on human code for decades.
+
+Misses: clean-looking code that does the wrong thing — wrong API arguments, wrong return shape, missed edge cases. A low score means the structural risk patterns are absent, not that the code is correct. Teams whose dominant failure mode is semantic bugs in clean code will get less out of this than the headline 0.645 AUC suggests.
+
+The cross-model results above mean the score reads code structure rather than any one assistant's fingerprint, so swapping Copilot for Cursor (or any other LLM) does not require retraining.
+
 
 ## Team
 
